@@ -4,8 +4,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, List, Union
 
 import boto3
-from google.auth.environment_vars import AWS_SECRET_ACCESS_KEY
-
 from aws.analyze_file.file_processor import download_file_from_s3
 from aws.analyze_file.text_analysis import text_analysis_check
 from aws.analyze_file.text_analysis.text_extractor import TextExtractor
@@ -92,35 +90,35 @@ def lambda_handler(event, context):
 
 
 if __name__ == '__main__':
-
-    start_time = time.time()
-
-    aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-
-    bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION,aws_access_key_id=aws_access_key_id,
-                           aws_secret_access_key=aws_secret_access_key)
-    ocr_processor = OCRProcessor()
-    text_extractor = TextExtractor(bedrock_client=bedrock)
-    local_file_path = "test3.pdf"
-    filetype = FileType.TerminationCertificate
-    pages_data = ocr_processor.extract(local_file_path)
-    label_data = text_extractor.extract(file_type=filetype, pages_data=pages_data, file_path=local_file_path)
-    checks = _run_checks(local_file_path, pages_data, label_data, filetype)
-    fraud_report = _create_fraud_report(
-        checks=checks,
-        documentInfo=DocumentInfo(
-            doc_id=str("Gsdg"),
-            source="s3",
-            mime_type=".pdf",
-            num_pages=len(pages_data),
-            created_at=_now_iso(),
-        ),
-    )
-    end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"took {execution_time:.4f} seconds to execute")
-
-    print("Fraud report: %s", fraud_report.model_dump_json())
-
+    pass
+    # start_time = time.time()
+    #
+    # aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+    # aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    #
+    # bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION,aws_access_key_id=aws_access_key_id,
+    #                        aws_secret_access_key=aws_secret_access_key)
+    # ocr_processor = OCRProcessor()
+    # text_extractor = TextExtractor(bedrock_client=bedrock)
+    # local_file_path = "test3.pdf"
+    # filetype = FileType.TerminationCertificate
+    # pages_data = ocr_processor.extract(local_file_path)
+    # label_data = text_extractor.extract(file_type=filetype, pages_data=pages_data, file_path=local_file_path)
+    # checks = _run_checks(local_file_path, pages_data, label_data, filetype)
+    # fraud_report = _create_fraud_report(
+    #     checks=checks,
+    #     documentInfo=DocumentInfo(
+    #         doc_id=str("Gsdg"),
+    #         source="s3",
+    #         mime_type=".pdf",
+    #         num_pages=len(pages_data),
+    #         created_at=_now_iso(),
+    #     ),
+    # )
+    # end_time = time.time()
+    # execution_time = end_time - start_time
+    # print(f"took {execution_time:.4f} seconds to execute")
+    #
+    # print("Fraud report: %s", fraud_report.model_dump_json())
+    #
 
