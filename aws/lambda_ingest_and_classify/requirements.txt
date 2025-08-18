@@ -1,0 +1,6 @@
+python-dotenv
+pymupdf
+Pillow
+boto3
+dspy
+

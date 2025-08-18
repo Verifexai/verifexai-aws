@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "bands": {
+    "severity": [
+      { "min": 90, "label": "critical" },
+      { "min": 70, "label": "high" },
+      { "min": 50, "label": "medium" },
+      { "min": 0,  "label": "low" }
+    ],
+    "status": [
+      { "min": 80, "label": "risk" },
+      { "min": 50, "label": "warn" },
+      { "min": 0,  "label": "pass" }
+    ]
+  },
+  "tax_officer_blacklist": []
+}

@@ -1,0 +1,14 @@
+boto3
+pytesseract
+PyMuPDF
+Pillow
+python-dotenv
+pydantic
+numpy
+opencv-python-headless
+scikit-image
+scikit-learn
+PyPDF2
+pyluach
+convertdate
+python-bidi
