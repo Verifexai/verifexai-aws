@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-from utilities.enums import FileType
+from aws.common.utilities.enums import FileType
 
 
 def analyze_metadata_check(local_file_path: str,

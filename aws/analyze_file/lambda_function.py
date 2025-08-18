@@ -1,8 +1,10 @@
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, List, Union
 
 import boto3
+from google.auth.environment_vars import AWS_SECRET_ACCESS_KEY
 
 from aws.analyze_file.file_processor import download_file_from_s3
 from aws.analyze_file.text_analysis import text_analysis_check
@@ -92,7 +94,12 @@ def lambda_handler(event, context):
 if __name__ == '__main__':
 
     start_time = time.time()
-    bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+
+    aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+    aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+    bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION,aws_access_key_id=aws_access_key_id,
+                           aws_secret_access_key=aws_secret_access_key)
     ocr_processor = OCRProcessor()
     text_extractor = TextExtractor(bedrock_client=bedrock)
     local_file_path = "test3.pdf"
