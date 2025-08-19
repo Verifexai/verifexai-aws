@@ -109,7 +109,7 @@ def _process_s3_record(record: dict) -> None:
 
     # Load file into Lambda local file system
     local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
-    file_data = {"local_file_path":local_file_path, "file_name":file_name, "file_ext":file_ext}
+    file_data = {"local_file_path":local_file_path, "file_name":file_name,"file_type":file_type, "file_ext":file_ext}
     s3_data = {"s3_bucket":bucket_name,"s3_key":original_key}
     _process_record(file_data=file_data,s3_data=s3_data, source="s3")
 
@@ -149,7 +149,7 @@ def _process_api_record(event: dict) -> None:
     upload_files_to_s3([local_file_path],FileConfig.S3_BUCKET, s3_key)
     logger.info("Saved file to s3://%s/%s", FileConfig.S3_BUCKET, s3_key)
 
-    file_data = {"local_file_path":local_file_path, "file_name":safe_file_name, "file_ext":file_ext}
+    file_data = {"local_file_path":local_file_path,"file_type":file_type, "file_name":safe_file_name, "file_ext":file_ext}
     s3_data = {"s3_bucket":FileConfig.S3_BUCKET,"s3_key":s3_key}
     _process_record(file_data=file_data, s3_data=s3_data, source="s3")
 
