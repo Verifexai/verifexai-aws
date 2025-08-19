@@ -39,6 +39,7 @@ class DynamoDBManager:
         file_type: str,
         doc_id: str,
         s3_path: str,
+        bucket: str,
         labels: Dict[str, Any],
     ) -> None:
         """Persist extracted label data in DynamoDB.
@@ -58,6 +59,7 @@ class DynamoDBManager:
             "file_type": file_type,
             "doc_id": doc_id,
             "s3_path": s3_path,
+            "bucket": bucket,
             "labels": labels,
         }
         try:
@@ -66,12 +68,19 @@ class DynamoDBManager:
             _DYNAMODB_LOGGER.error("Failed to store labels: %s", exc)
 
     def save_check_results(
-        self, *, file_type: str, doc_id: str, fraud_report_json: str
+        self, *,
+        file_type: str,
+        doc_id: str,
+        s3_path: str,
+        bucket: str,
+        fraud_report_json: str
     ) -> None:
         """Persist fraud report JSON in DynamoDB."""
         item = {
             "file_type": file_type,
             "doc_id": doc_id,
+            "s3_path": s3_path,
+            "bucket": bucket,
             "checks": json.loads(fraud_report_json),
         }
         try:

@@ -3,10 +3,10 @@ import json
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, List, Union
+from typing import Callable, List, Union, Dict, Any
 
 import boto3
-from aws.analyze_file.file_processor import download_file_from_s3
+from aws.analyze_file.file_processor import download_file_from_s3, upload_files_to_s3
 from aws.analyze_file.text_analysis import text_analysis_check
 from aws.analyze_file.text_analysis.text_extractor import TextExtractor
 from aws.analyze_file.font_anomalies import font_anomalies_check
@@ -47,13 +47,16 @@ def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileTyp
 
 
 def _process_record(
-    local_file_path: str,
-    file_name: uuid.UUID,
-    file_ext: str,
-    file_type: FileType,
-    source: str,
-    s3_key: str,
+    file_data: Dict[str, Any],
+    s3_data: Dict[str, Any],
+    source: str
 ) -> None:
+    # Extract values
+    local_file_path = file_data['local_file_path']
+    file_type = file_data['file_type']
+    bucket = s3_data['bucket']
+    s3_key = s3_data['s3_key']
+
     """Run extraction, checks and logging for a given file."""
     # Extract OCR information from file
     pages_data = ocr_processor.extract(local_file_path)
@@ -61,12 +64,12 @@ def _process_record(
     label_data = text_extractor.extract(local_file_path, file_type, pages_data)
 
     # Persist label data
-    label_item = dict(label_data)
-    label_item["file_path"] = s3_key
+    label_item = {"label_data": dict(label_data)}
     dynamodb_manager.save_labels(
         file_type=file_type.value,
-        doc_id=str(file_name),
+        doc_id=str(file_data.get('file_name'), ""),
         s3_path=s3_key,
+        bucket=bucket,
         labels=label_item,
     )
 
@@ -75,18 +78,22 @@ def _process_record(
     fraud_report = _create_fraud_report(
         checks=checks,
         documentInfo=DocumentInfo(
-            doc_id=str(file_name),
+            doc_id=str(file_data.get('file_name'), ""),
             source=source,
-            mime_type=file_ext,
+            mime_type=str(file_data.get("file_ext"), ""),
             num_pages=len(pages_data),
             created_at=_now_iso(),
         ),
     )
+
     dynamodb_manager.save_check_results(
         file_type=file_type.value,
-        doc_id=str(file_name),
+        doc_id=str(file_data.get('file_name'), ""),
+        s3_path=s3_key,
+        bucket=bucket,
         fraud_report_json=fraud_report.model_dump_json(),
     )
+
     logger.info("Fraud report: %s", fraud_report.model_dump_json())
 
 
@@ -102,7 +109,9 @@ def _process_s3_record(record: dict) -> None:
 
     # Load file into Lambda local file system
     local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
-    _process_record(local_file_path, file_name, file_ext, file_type, "s3", original_key)
+    file_data = {"local_file_path":local_file_path, "file_name":file_name, "file_ext":file_ext}
+    s3_data = {"s3_bucket":bucket_name,"s3_key":original_key}
+    _process_record(file_data=file_data,s3_data=s3_data, source="s3")
 
 
 def _process_api_record(event: dict) -> None:
@@ -137,11 +146,12 @@ def _process_api_record(event: dict) -> None:
 
     # Save to S3
     s3_key = f"{FileConfig.RAW_PREFIX}{parent_folder}/{safe_file_name}" if parent_folder else safe_file_name
-    s3_client = boto3.client("s3")
-    s3_client.upload_file(local_file_path, FileConfig.S3_BUCKET, s3_key)
+    upload_files_to_s3([local_file_path],FileConfig.S3_BUCKET, s3_key)
     logger.info("Saved file to s3://%s/%s", FileConfig.S3_BUCKET, s3_key)
 
-    _process_record(local_file_path, file_uuid, file_ext, file_type, "api", s3_key)
+    file_data = {"local_file_path":local_file_path, "file_name":safe_file_name, "file_ext":file_ext}
+    s3_data = {"s3_bucket":FileConfig.S3_BUCKET,"s3_key":s3_key}
+    _process_record(file_data=file_data, s3_data=s3_data, source="s3")
 
 def lambda_handler(event, context):
     """Lambda entry point for analyzing files."""

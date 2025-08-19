@@ -39,7 +39,7 @@ def download_file_from_s3(bucket_name: str, original_key: str) -> str:
     return local_path, file_name, file_ext
 
 
-def upload_files_to_s3(file_paths: List[str]) -> List[dict]:
+def upload_files_to_s3(file_paths: List[str],bucket,key) -> List[dict]:
     """
     Uploads a list of local file paths to S3 with safe UUID-based keys.
     Returns: List of metadata dicts per file uploaded
@@ -53,16 +53,15 @@ def upload_files_to_s3(file_paths: List[str]) -> List[dict]:
 
         filename = os.path.basename(path)
         extension = os.path.splitext(filename)[1]
-        processed_key = f"{FileConfig.EXTRACT_PREFIX}{uuid.uuid4()}{extension}"
 
         try:
-            print(f"[UPLOAD] Uploading {path} to s3://{FileConfig.S3_BUCKET}/{processed_key}")
-            s3_client.upload_file(path, FileConfig.S3_BUCKET, processed_key)
-            print(f"[SUCCESS] Uploaded to: {processed_key}")
+            print(f"[UPLOAD] Uploading {path} to s3://{FileConfig.S3_BUCKET}/{key}")
+            s3_client.upload_file(path, bucket, key)
+            print(f"[SUCCESS] Uploaded to: {key}")
 
             uploaded_files.append({
                 'local_path': path,
-                'image_path': processed_key,
+                'image_path': key,
             })
         except Exception as e:
             print(f"[ERROR] Upload failed for {path}: {e}")
