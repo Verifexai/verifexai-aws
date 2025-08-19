@@ -4,11 +4,11 @@ import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, List, Union, Dict, Any
+from typing import Callable, List, Dict, Any
 
 import boto3
 from aws.analyze_file.file_processor import download_file_from_s3, upload_files_to_s3
-from aws.analyze_file.text_analysis import text_analysis_check
+from aws.analyze_file.text_analysis import text_analysis_check, text_analysis_extract
 from aws.analyze_file.font_anomalies import font_anomalies_check
 from aws.analyze_file.metadata import analyze_metadata_check
 from aws.analyze_file.OCR.ocr_processor import OCRProcessor
