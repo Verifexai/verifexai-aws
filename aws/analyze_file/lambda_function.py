@@ -60,6 +60,7 @@ def _process_record(
     file_type = file_data['file_type']
     bucket = s3_data['s3_bucket']
     s3_key = s3_data['s3_key']
+    file_name = str(file_data.get('file_name', ""))
 
     """Run extraction, checks and logging for a given file."""
     # Extract OCR information from file
@@ -71,7 +72,7 @@ def _process_record(
     label_item = {"label_data": dict(label_data)}
     dynamodb_manager.save_labels(
         file_type=file_type.value,
-        doc_id=str(file_data.get('file_name', "")),
+        doc_id=file_name,
         s3_path=s3_key,
         bucket=bucket,
         labels=label_item,
@@ -82,7 +83,7 @@ def _process_record(
     fraud_report = _create_fraud_report(
         checks=checks,
         documentInfo=DocumentInfo(
-            doc_id=str(file_data.get('file_name', "")),
+            doc_id=file_name,
             source=source,
             mime_type=str(file_data.get("file_ext", "")),
             num_pages=len(pages_data),
@@ -92,7 +93,7 @@ def _process_record(
 
     dynamodb_manager.save_check_results(
         file_type=file_type.value,
-        doc_id=str(file_data.get('file_name', "")),
+        doc_id=file_name,
         s3_path=s3_key,
         bucket=bucket,
         fraud_report_json=fraud_report.model_dump_json(),
