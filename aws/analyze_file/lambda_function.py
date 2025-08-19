@@ -8,6 +8,7 @@ from typing import Callable, List, Dict, Any
 
 import boto3
 from aws.analyze_file.file_processor import download_file_from_s3, upload_files_to_s3
+from aws.analyze_file.pattern_base import pattern_base_check
 from aws.analyze_file.text_analysis import text_analysis_check, text_analysis_extract
 from aws.analyze_file.font_anomalies import font_anomalies_check
 from aws.analyze_file.metadata import analyze_metadata_check
@@ -31,7 +32,8 @@ def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileTyp
     check_functions: List[Callable[[], CheckOutput]] = [
         lambda: font_anomalies_check(local_file_path=local_file_path, pages_data=pages_data, bedrock=bedrock),
         lambda: analyze_metadata_check(local_file_path, label_data=label_data, file_type=file_type),
-        lambda: text_analysis_check(file_type=file_type, label_data=label_data)
+        lambda: text_analysis_check(file_type=file_type, label_data=label_data),
+        lambda: pattern_base_check(file_type=file_type, label_data=label_data, dynamodb=dynamodb_manager)
     ]
     checks: List[CheckResult] = []
     with ThreadPoolExecutor(max_workers=len(check_functions)) as executor:
