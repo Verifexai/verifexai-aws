@@ -51,6 +51,8 @@ def _process_record(
     s3_data: Dict[str, Any],
     source: str
 ) -> None:
+
+    logger.info(f"_process_record file_data:{file_data}, s3_data:{s3_data} source:{source}")
     # Extract values
     local_file_path = file_data['local_file_path']
     file_type = file_data['file_type']
@@ -109,7 +111,7 @@ def _process_s3_record(record: dict) -> None:
 
     # Load file into Lambda local file system
     local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
-    file_data = {"local_file_path":local_file_path, "file_name":file_name,"file_type":file_type, "file_ext":file_ext}
+    file_data = {"local_file_path":local_file_path,"file_type":file_type, "file_name":file_name, "file_ext":file_ext}
     s3_data = {"s3_bucket":bucket_name,"s3_key":original_key}
     _process_record(file_data=file_data,s3_data=s3_data, source="s3")
 
