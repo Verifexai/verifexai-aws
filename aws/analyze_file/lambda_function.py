@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, List, Union, Dict, Any
@@ -8,7 +9,6 @@ from typing import Callable, List, Union, Dict, Any
 import boto3
 from aws.analyze_file.file_processor import download_file_from_s3, upload_files_to_s3
 from aws.analyze_file.text_analysis import text_analysis_check
-from aws.analyze_file.text_analysis.text_extractor import TextExtractor
 from aws.analyze_file.font_anomalies import font_anomalies_check
 from aws.analyze_file.metadata import analyze_metadata_check
 from aws.analyze_file.OCR.ocr_processor import OCRProcessor
@@ -22,7 +22,6 @@ from aws.common.utilities.dynamodb_manager import DynamoDBManager
 
 ocr_processor = OCRProcessor()
 bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
-text_extractor = TextExtractor(bedrock_client=bedrock)
 logger = LoggerManager.get_module_logger(ANALYZE_FILE)
 dynamodb_manager = DynamoDBManager()
 
@@ -51,7 +50,6 @@ def _process_record(
         s3_data: Dict[str, Any],
         source: str
 ) -> None:
-    logger.info(f"_process_record file_data:{file_data}, s3_data:{s3_data} source:{source}")
     # Extract values
     local_file_path = file_data['local_file_path']
     file_type = file_data['file_type']
@@ -62,7 +60,7 @@ def _process_record(
     # Extract OCR information from file
     pages_data = ocr_processor.extract(local_file_path)
     # Extract structured text fields
-    label_data = text_extractor.extract(local_file_path, file_type, pages_data)
+    label_data = text_analysis_extract(local_file_path, file_type, pages_data, bedrock)
 
     # Persist label data
     label_item = {"label_data": dict(label_data)}
@@ -186,11 +184,10 @@ if __name__ == '__main__':
     # bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION,aws_access_key_id=aws_access_key_id,
     #                        aws_secret_access_key=aws_secret_access_key)
     # ocr_processor = OCRProcessor()
-    # text_extractor = TextExtractor(bedrock_client=bedrock)
-    # local_file_path = "test3.pdf"
+    # local_file_path = "files/test3.pdf"
     # filetype = FileType.TerminationCertificate
     # pages_data = ocr_processor.extract(local_file_path)
-    # label_data = text_extractor.extract(file_type=filetype, pages_data=pages_data, file_path=local_file_path)
+    # label_data = text_analysis_extract(local_file_path, filetype, pages_data, bedrock)
     # checks = _run_checks(local_file_path, pages_data, label_data, filetype)
     # fraud_report = _create_fraud_report(
     #     checks=checks,
@@ -207,4 +204,5 @@ if __name__ == '__main__':
     # print(f"took {execution_time:.4f} seconds to execute")
     #
     # print("Fraud report: %s", fraud_report.model_dump_json())
-    #
+
+

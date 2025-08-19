@@ -2,45 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import datetime, date
-from typing import Dict, List, Optional, Any
-from aws.analyze_file.text_analysis.tex_certificate.withholding_helper import _norm_number, \
-    _load_known_deduction_numbers
+from typing import Any, Dict, List
+
+from aws.analyze_file.text_analysis.validators.withholding_helper import (
+    _norm_number,
+    _load_known_deduction_numbers,
+)
 from aws.common.config.config import client_config
 from aws.common.models.check_result import CheckResult
 from aws.common.models.evidence import Evidence
-from aws.common.utilities.enums import (
-    Category,
-    EvidenceType,
-    Kind,
-    Status,
-    TaxCertificateField,
-)
+from aws.common.utilities.enums import EvidenceType, Kind, TaxCertificateField
 from aws.common.utilities.hebrew_date_parser import HebrewDateUtil
-from aws.common.utilities.utils import _make_id, _now_iso
 
-class TaxCertificateValidator:
+from .base_validator import BaseValidator
+
+
+class TaxCertificateValidator(BaseValidator):
     """Run field validations on extracted tax certificate data."""
 
     def __init__(self, data: Dict[str, Any]):
-        self.data = data
-
-    # Helper -----------------------------------------------------------------
-    def _evidence(self, field: str) -> Evidence:
-        info = self.data.get(field) or {}
-        value = info.get("text") if isinstance(info, dict) else info
-        bbox = info.get("bbox") if isinstance(info, dict) else None
-        return Evidence(type=EvidenceType.FIELD, value={field: value}, bbox=bbox)
-
-    def _date_from_field(self, field: str) -> Optional[date]:
-        info = self.data.get(field) or {}
-        value = info.get("text") if isinstance(info, dict) else info
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except Exception:
-            return None
+        super().__init__(data)
 
     def validate_data(self) -> List[CheckResult]:
         checks: List[CheckResult] = []
@@ -94,11 +75,13 @@ class TaxCertificateValidator:
 
         known_set, number_to_company = _load_known_deduction_numbers()
         valid = normalized in known_set if normalized else False
-        evidence = [self._evidence(TaxCertificateField.DEDUCTION_FILE_NUMBER.value)]
+        evidence: List[Evidence] = [self._evidence(TaxCertificateField.DEDUCTION_FILE_NUMBER.value)]
         if valid:
             label = number_to_company.get(normalized)
             if label:
-                evidence.append(Evidence(type=EvidenceType.METRIC, value={"matched_company": label}))
+                evidence.append(
+                    Evidence(type=EvidenceType.METRIC, value={"matched_company": label})
+                )
 
         score = 0 if valid else 70
         return self._build_result(
@@ -123,30 +106,4 @@ class TaxCertificateValidator:
             "Name not in blacklist" if valid else "Tax officer is blacklisted",
             score,
             evidence,
-        )
-
-
-    # Builder ----------------------------------------------------------------
-    def _build_result(
-        self,
-        id_suffix: str,
-        kind: Kind,
-        title: str,
-        description: str,
-        score: int,
-        evidence: List[Evidence],
-        *,
-        status: Optional[Status] = None,
-    ) -> CheckResult:
-        return CheckResult(
-            id=_make_id(id_suffix),
-            category=Category.CROSS_SOURCE_VERIFICATION,
-            kind=kind,
-            title=title,
-            description=description,
-            score=score,
-            status=status or client_config.status_for(score),
-            evidence=evidence,
-            tags=[],
-            timestamp=_now_iso(),
         )

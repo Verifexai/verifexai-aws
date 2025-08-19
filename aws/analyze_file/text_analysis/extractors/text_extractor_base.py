@@ -9,54 +9,22 @@ import boto3
 import fitz  # type: ignore
 from PIL import Image
 
-from aws.analyze_file.OCR.ocr_processor import OCRProcessor
 from aws.common.config.config import BEDROCK_REGION
 from aws.common.utilities.date_utils import parse_date_multiple_formats
-from aws.common.utilities.enums import (
-    FileType,
-    TaxCertificateField,
-    TerminationCertificateField,
-)
+from aws.common.utilities.enums import TaxCertificateField, TerminationCertificateField
 from aws.common.utilities.logger_manager import LoggerManager, ANALYZE_FILE
 from aws.common.utilities.utils import _bedrock_safe_doc_name
 
-TAX_PROMPT = """Extract Israeli tax certificate (אישור פקיד שומה) fields.
-If Hebrew text needs gershayim/geresh, use the Unicode characters: U+05F4 (״) and U+05F3 (׳). Do not use ASCII " or ' inside values.
-Return ONLY a single valid JSON object. No prose, no code fences following structure:
-{
-  "document_date": {"text": "date as shown", "value": "YYYY-MM-DD"},
-  "document_date_hebrew": {"text": "hebrew date", "value": "Same as text"},
-  "job_departure_date": {"text": "date as shown", "value": "YYYY-MM-DD"},
-  "deduction_file_number": {"text": "raw number", "value": "number"},
-  "worker_name": {"text": "name", "value": "name"},
-  "worker_id": {"text": "id", "value": "9digits"},
-  "company_name": {"text": "company name", "value": "company name"},
-  "company_number": {"text": "id", "value": "9digits"},
-  "compensation_amount": {"text": "amount", "value": "number"}
-}
-"""
+class BaseTextExtractor:
+    """Base text extractor leveraging Bedrock and OCR results.
 
+    Subclasses should define ``prompt``, ``fields`` and ``date_fields``
+    to describe the expected model output.
+    """
 
-TERMINATION_PROMPT = """Extract Israeli employment termination certificate (אישור סיום העסקה) fields.
-If Hebrew text needs gershayim/geresh, use the Unicode characters: U+05F4 (״) and U+05F3 (׳). Do not use ASCII " or ' inside values.
-Return ONLY a single valid JSON object. No prose, no code fences following structure:
-{
-  "document_date": {"text": "date as shown", "value": "YYYY-MM-DD"},
-  "worker_name": {"text": "name", "value": "name"},
-  "worker_id": {"text": "id", "value": "9digits"},
-  "company_name": {"text": "name", "value": "name"},
-  "job_start_date": {"text": "date as shown, "value": "YYYY-MM-DD"},
-  "job_departure_date": {"text": "date as shown", "value": "YYYY-MM-DD "},
-  "approver_name": {"text": "name", "value": "name"}
-}
-
-return job_start_date or job_departure_date only if exist on the document
-"""
-
-
-class TextExtractor:
-    """Generic text extractor that uses Bedrock and OCR results to provide
-    normalized values and bounding boxes for relevant document fields."""
+    prompt: str = ""
+    fields: List[Enum] = []
+    date_fields: List[str] = []
 
     def __init__(
         self,
@@ -160,40 +128,18 @@ class TextExtractor:
             return best_token.get("text"), best_token.get("bbox")
         return None, None
 
-    def _config_for_type(self, file_type: FileType) -> Tuple[str, List[Enum], List[str]]:
-        if file_type == FileType.TaxCertificate:
-            fields = list(TaxCertificateField)
-            date_fields = {
-                TaxCertificateField.DOCUMENT_DATE.value,
-                TaxCertificateField.JOB_DEPARTURE_DATE.value,
-            }
-            prompt = TAX_PROMPT
-        elif file_type == FileType.TerminationCertificate:
-            fields = list(TerminationCertificateField)
-            date_fields = {
-                TerminationCertificateField.DOCUMENT_DATE.value,
-                TerminationCertificateField.JOB_START_DATE.value,
-                TerminationCertificateField.JOB_DEPARTURE_DATE.value,
-            }
-            prompt = TERMINATION_PROMPT
-        else:
-            raise ValueError("Unsupported file type")
-        return prompt, fields, list(date_fields)
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def extract(
         self,
         file_path: str,
-        file_type: FileType,
         pages_data: List[List[Dict[str, Any]]],
     ) -> Dict[str, Any]:
-        prompt, fields, date_fields = self._config_for_type(file_type)
         doc_bytes, media_type = self._load_document(file_path)
-        raw = self._invoke_model(prompt, doc_bytes, media_type)
+        raw = self._invoke_model(self.prompt, doc_bytes, media_type)
         result: Dict[str, Any] = {}
-        for field in fields:
+        for field in self.fields:
             field_info = raw.get(field.value) or {}
             if isinstance(field_info, dict):
                 raw_text = field_info.get("text")
@@ -201,7 +147,7 @@ class TextExtractor:
             else:
                 raw_text = field_info
                 raw_value = field_info
-            normalized = self._normalize(raw_value, is_date=field.value in date_fields)
+            normalized = self._normalize(raw_value, is_date=field.value in self.date_fields)
             search_value = raw_text or normalized
             original_text, bbox = self._match_ocr(pages_data, search_value or "")
             result[field.value] = {
@@ -211,3 +157,5 @@ class TextExtractor:
                 "bbox": bbox,
             }
         return result
+
+
