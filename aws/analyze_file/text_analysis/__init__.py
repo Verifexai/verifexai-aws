@@ -1,17 +1,22 @@
-"""Public interface for text analysis validations."""
+"""Public interface for text analysis extraction and validation."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from aws.analyze_file.text_analysis.termination_certificate.termination_certificate_validator import (
-    TerminationCertificateValidator,
+from .extractors import (
+    EmploymentTerminationTextExtractor,
+    TaxCertificateTextExtractor,
 )
-from aws.analyze_file.text_analysis.tex_certificate.tax_certificate_validator import (
-    TaxCertificateValidator,
-)
+from .validators import run_validator
 from aws.common.models.check_result import CheckResult
 from aws.common.utilities.enums import FileType
 
-__all__ = ["text_analysis_check"]
+__all__ = [
+    "EmploymentTerminationTextExtractor",
+    "TaxCertificateTextExtractor",
+    "text_analysis_check",
+    "text_analysis_extract",
+    "run_validator",
+]
 
 
 def text_analysis_check(*, file_type: FileType, label_data: Dict[str, Any]) -> List[CheckResult]:
@@ -22,14 +27,23 @@ def text_analysis_check(*, file_type: FileType, label_data: Dict[str, Any]) -> L
     file_type:
         The type of document being processed.
     label_data:
-        Structured data extracted by :class:`TextExtractor`.
+        Structured data extracted by the appropriate TextExtractor subclass.
     """
 
-    if file_type == FileType.TaxCertificate:
-        validator = TaxCertificateValidator(label_data)
-        return validator.validate_data()
-    if file_type == FileType.TerminationCertificate:
-        validator = TerminationCertificateValidator(label_data)
-        return validator.validate_data()
-    return []
+    return run_validator(file_type=file_type, label_data=label_data)
 
+
+def text_analysis_extract(
+    local_file_path: str,
+    file_type: FileType,
+    pages_data: List[List[Dict]],
+    bedrock_client: Optional[Any] = None,
+) -> Dict[str, Any]:
+
+    if file_type == FileType.TaxCertificate:
+        extractor = TaxCertificateTextExtractor(bedrock_client=bedrock_client)
+    elif file_type == FileType.TerminationCertificate:
+        extractor = EmploymentTerminationTextExtractor(bedrock_client=bedrock_client)
+    else:
+        raise ValueError("Unsupported file type")
+    return extractor.extract(local_file_path, pages_data)

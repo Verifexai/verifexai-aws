@@ -2,47 +2,20 @@
 
 from __future__ import annotations
 
-import re
-from datetime import datetime, date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from aws.common.config.config import client_config
 from aws.common.models.check_result import CheckResult
-from aws.common.models.evidence import Evidence
-from aws.common.utilities.enums import (
-    Category,
-    EvidenceType,
-    Kind,
-    Status,
-    TerminationCertificateField,
-)
-from aws.common.utilities.utils import _make_id, _now_iso
+from aws.common.utilities.enums import Kind, TerminationCertificateField
+
+from .base_validator import BaseValidator
 
 
-class TerminationCertificateValidator:
+class TerminationCertificateValidator(BaseValidator):
     """Run field validations on extracted termination certificate data."""
 
     def __init__(self, data: Dict[str, Any]):
-        self.data = data
+        super().__init__(data)
 
-    # Helper -----------------------------------------------------------------
-    def _evidence(self, field: str) -> Evidence:
-        info = self.data.get(field) or {}
-        value = info.get("text") if isinstance(info, dict) else info
-        bbox = info.get("bbox") if isinstance(info, dict) else None
-        return Evidence(type=EvidenceType.FIELD, value={field: value}, bbox=bbox)
-
-    def _date_from_field(self, field: str) -> Optional[date]:
-        info = self.data.get(field) or {}
-        value = info.get("text") if isinstance(info, dict) else info
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except Exception:
-            return None
-
-    # Public -----------------------------------------------------------------
     def validate_data(self) -> List[CheckResult]:
         checks: List[CheckResult] = []
         checks.append(self._check_departure_before_document())
@@ -81,7 +54,6 @@ class TerminationCertificateValidator:
         start = self._date_from_field(TerminationCertificateField.JOB_START_DATE.value)
         departure = self._date_from_field(TerminationCertificateField.JOB_DEPARTURE_DATE.value)
 
-        # Decide score & details
         if start is None:
             score = 20
             details = "Start date missing; treated as acceptable"
@@ -110,6 +82,8 @@ class TerminationCertificateValidator:
         )
 
     def _check_worker_id_format(self) -> CheckResult:
+        import re
+
         raw = (self.data.get(TerminationCertificateField.WORKER_ID.value) or {}).get("text")
         valid = bool(re.fullmatch(r"\d{9}", str(raw or "")))
         score = 0 if valid else 60
@@ -121,29 +95,4 @@ class TerminationCertificateValidator:
             "Worker ID is 9 digits" if valid else "Worker ID is not 9 digits",
             score,
             evidence,
-        )
-
-    # Builder ----------------------------------------------------------------
-    def _build_result(
-        self,
-        id_suffix: str,
-        kind: Kind,
-        title: str,
-        description: str,
-        score: int,
-        evidence: List[Evidence],
-        *,
-        status: Optional[Status] = None,
-    ) -> CheckResult:
-        return CheckResult(
-            id=_make_id(id_suffix),
-            category=Category.CROSS_SOURCE_VERIFICATION,
-            kind=kind,
-            title=title,
-            description=description,
-            score=score,
-            status=status or client_config.status_for(score),
-            evidence=evidence,
-            tags=[],
-            timestamp=_now_iso(),
         )
