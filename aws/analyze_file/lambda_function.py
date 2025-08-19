@@ -22,9 +22,12 @@ from aws.common.utilities.utils import _now_iso, _create_fraud_report, _get_pare
 from aws.common.utilities.dynamodb_manager import DynamoDBManager
 
 ocr_processor = OCRProcessor()
+# AWX:
 bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+dynamodb = boto3.resource("dynamodb", region_name=BEDROCK_REGION)
+
 logger = LoggerManager.get_module_logger(ANALYZE_FILE)
-dynamodb_manager = DynamoDBManager(region_name=BEDROCK_REGION)
+dynamodb_manager = DynamoDBManager(dynamodb=dynamodb)
 
 
 def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileType) -> List[CheckResult]:
@@ -177,58 +180,62 @@ def lambda_handler(event, context):
 
 
 if __name__ == '__main__':
-    # pass
-    start_time = time.time()
-
-    aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-
-    bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION,aws_access_key_id=aws_access_key_id,
-                           aws_secret_access_key=aws_secret_access_key)
-    ocr_processor = OCRProcessor()
-    local_file_path = "files/test3.pdf"
-    file_type = FileType.TerminationCertificate
-    file_name = "yair-test"
-    s3_key ="s3_key-yair-test"
-    bucket = "s3-bucket-yair-test"
-
-    pages_data = ocr_processor.extract(local_file_path)
-    label_data = text_analysis_extract(local_file_path, file_type, pages_data, bedrock)
-    checks = _run_checks(local_file_path, pages_data, label_data, file_type)
-    label_item = {"label_data": dict(label_data)}
-    dynamodb_manager.save_labels(
-        file_type=file_type.value,
-        doc_id=file_name,
-        s3_path=s3_key,
-        bucket=bucket,
-        labels=label_item,
-    )
-
-    # Checks
-    checks = _run_checks(local_file_path, pages_data, label_data, file_type)
-    fraud_report = _create_fraud_report(
-        checks=checks,
-        documentInfo=DocumentInfo(
-            doc_id=file_name,
-            source="s3",
-            mime_type="pdf",
-            num_pages=len(pages_data),
-            created_at=_now_iso(),
-        ),
-    )
-
-    dynamodb_manager.save_check_results(
-        file_type=file_type.value,
-        doc_id=file_name,
-        s3_path=s3_key,
-        bucket=bucket,
-        fraud_report_json=fraud_report.model_dump_json(),
-    )
-
-    end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"took {execution_time:.4f} seconds to execute")
-
-    print("Fraud report: %s", fraud_report.model_dump_json())
+    pass
+    # start_time = time.time()
+    #
+    # aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+    # aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    #
+    # bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION,aws_access_key_id=aws_access_key_id,
+    #                        aws_secret_access_key=aws_secret_access_key)
+    # dynamodb = boto3.resource("dynamodb", region_name=BEDROCK_REGION, aws_access_key_id=aws_access_key_id,
+    #                           aws_secret_access_key=aws_secret_access_key)
+    #
+    # dynamodb_manager = DynamoDBManager(dynamodb=dynamodb)
+    # ocr_processor = OCRProcessor()
+    # local_file_path = "files/test3.pdf"
+    # file_type = FileType.TerminationCertificate
+    # file_name = "yair-test"
+    # s3_key ="s3_key-yair-test"
+    # bucket = "s3-bucket-yair-test"
+    #
+    # pages_data = ocr_processor.extract(local_file_path)
+    # label_data = text_analysis_extract(local_file_path, file_type, pages_data, bedrock)
+    # checks = _run_checks(local_file_path, pages_data, label_data, file_type)
+    # label_item = {"label_data": dict(label_data)}
+    # dynamodb_manager.save_labels(
+    #     file_type=file_type.value,
+    #     doc_id=file_name,
+    #     s3_path=s3_key,
+    #     bucket=bucket,
+    #     labels=label_item,
+    # )
+    #
+    # # Checks
+    # checks = _run_checks(local_file_path, pages_data, label_data, file_type)
+    # fraud_report = _create_fraud_report(
+    #     checks=checks,
+    #     documentInfo=DocumentInfo(
+    #         doc_id=file_name,
+    #         source="s3",
+    #         mime_type="pdf",
+    #         num_pages=len(pages_data),
+    #         created_at=_now_iso(),
+    #     ),
+    # )
+    #
+    # dynamodb_manager.save_check_results(
+    #     file_type=file_type.value,
+    #     doc_id=file_name,
+    #     s3_path=s3_key,
+    #     bucket=bucket,
+    #     fraud_report_json=fraud_report.model_dump_json(),
+    # )
+    #
+    # end_time = time.time()
+    # execution_time = end_time - start_time
+    # print(f"took {execution_time:.4f} seconds to execute")
+    #
+    # print("Fraud report: %s", fraud_report.model_dump_json())
 
 

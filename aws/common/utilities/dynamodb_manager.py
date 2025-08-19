@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -22,16 +22,11 @@ class DynamoDBManager:
         Table for document check results.
     """
 
-    def __init__(self, region_name: str | None = None) -> None:
-        aws_access_kcey_id = os.environ.get("AWS_ACCESS_KEY_ID")
-        aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-
-        resource = boto3.resource("dynamodb", region_name=region_name, aws_access_key_id=aws_access_kcey_id,
-                                  aws_secret_access_key=aws_secret_access_key)
+    def __init__(self, dynamodb:Optional[Any]) -> None:
         labels_table_name = os.getenv("DDB_LABELS_TABLE", "document-labels")
         checks_table_name = os.getenv("DDB_CHECKS_TABLE", "document-check-results")
-        self.labels_table = resource.Table(labels_table_name)
-        self.checks_table = resource.Table(checks_table_name)
+        self.labels_table = dynamodb.Table(labels_table_name)
+        self.checks_table = dynamodb.Table(checks_table_name)
         _DYNAMODB_LOGGER.info(
             "Initialized DynamoDB tables: labels=%s, checks=%s",
             labels_table_name,
