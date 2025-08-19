@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -17,3 +17,5 @@ class CheckResult(BaseModel):
     evidence: List[Evidence]
     tags: Optional[List[str]] = None
     timestamp: datetime
+
+CheckOutput = Union[CheckResult, List[CheckResult]]

@@ -13,14 +13,13 @@ from aws.analyze_file.font_anomalies import font_anomalies_check
 from aws.analyze_file.metadata import analyze_metadata_check
 from aws.analyze_file.OCR.ocr_processor import OCRProcessor
 from aws.common.config.config import BEDROCK_REGION, FileConfig
-from aws.common.models.check_result import CheckResult
+from aws.common.models.check_result import CheckResult, CheckOutput
 from aws.common.models.document_info import DocumentInfo
 from aws.common.utilities.enums import FileType
 from aws.common.utilities.logger_manager import LoggerManager, ANALYZE_FILE
 from aws.common.utilities.utils import _now_iso, _create_fraud_report, _get_parent_folder_from_key
 
 ocr_processor = OCRProcessor()
-CheckOutput = Union[CheckResult, List[CheckResult]]
 bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
 text_extractor = TextExtractor(bedrock_client=bedrock)
 logger = LoggerManager.get_module_logger(ANALYZE_FILE)
