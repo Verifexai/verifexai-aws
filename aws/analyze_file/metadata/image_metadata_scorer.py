@@ -33,6 +33,7 @@ def _parse_invoice_date(dates: List[str]) -> Optional[datetime]:
 class ImageMetadataScorer(MetadataBaseScorer):
     def _extract_metadata(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {}
+        self.logger.info("Extracting image metadata from %s", self.file_path)
         try:
             with Image.open(self.file_path) as img:
                 exif = img.getexif() or {}
@@ -40,11 +41,12 @@ class ImageMetadataScorer(MetadataBaseScorer):
                 data["creation_date"] = tag_map.get("DateTimeOriginal") or tag_map.get("DateTime")
                 data["modification_date"] = tag_map.get("DateTime")
                 data["producer"] = tag_map.get("Software")
-        except Exception:
-            pass
+        except Exception as exc:
+            self.logger.error("Failed to extract image metadata: %s", exc)
         return data
 
     def _score_metadata(self, metadata: Dict[str, Any], invoice_dates: List[str]) -> Dict[str, Any]:
+        self.logger.info("Scoring image metadata for %s", self.file_path)
         scored: Dict[str, Any] = {}
         scores: List[int] = []
         invoice_dt = _parse_invoice_date(invoice_dates)
