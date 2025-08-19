@@ -31,7 +31,7 @@ def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileTyp
     """Run all checks concurrently and return a flat list of CheckResults."""
     check_functions: List[Callable[[], CheckOutput]] = [
         lambda: font_anomalies_check(local_file_path=local_file_path, pages_data=pages_data, bedrock=bedrock),
-        lambda: analyze_metadata_check(local_file_path,label_data=label_data, file_type=file_type),
+        lambda: analyze_metadata_check(local_file_path, label_data=label_data, file_type=file_type),
         lambda: text_analysis_check(file_type=file_type, label_data=label_data)
     ]
     checks: List[CheckResult] = []
@@ -47,11 +47,10 @@ def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileTyp
 
 
 def _process_record(
-    file_data: Dict[str, Any],
-    s3_data: Dict[str, Any],
-    source: str
+        file_data: Dict[str, Any],
+        s3_data: Dict[str, Any],
+        source: str
 ) -> None:
-
     logger.info(f"_process_record file_data:{file_data}, s3_data:{s3_data} source:{source}")
     # Extract values
     local_file_path = file_data['local_file_path']
@@ -69,7 +68,7 @@ def _process_record(
     label_item = {"label_data": dict(label_data)}
     dynamodb_manager.save_labels(
         file_type=file_type.value,
-        doc_id=str(file_data.get('file_name'), ""),
+        doc_id=str(file_data.get('file_name', "")),
         s3_path=s3_key,
         bucket=bucket,
         labels=label_item,
@@ -80,9 +79,9 @@ def _process_record(
     fraud_report = _create_fraud_report(
         checks=checks,
         documentInfo=DocumentInfo(
-            doc_id=str(file_data.get('file_name'), ""),
+            doc_id=str(file_data.get('file_name', "")),
             source=source,
-            mime_type=str(file_data.get("file_ext"), ""),
+            mime_type=str(file_data.get("file_ext", "")),
             num_pages=len(pages_data),
             created_at=_now_iso(),
         ),
@@ -90,7 +89,7 @@ def _process_record(
 
     dynamodb_manager.save_check_results(
         file_type=file_type.value,
-        doc_id=str(file_data.get('file_name'), ""),
+        doc_id=str(file_data.get('file_name', "")),
         s3_path=s3_key,
         bucket=bucket,
         fraud_report_json=fraud_report.model_dump_json(),
@@ -111,9 +110,10 @@ def _process_s3_record(record: dict) -> None:
 
     # Load file into Lambda local file system
     local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
-    file_data = {"local_file_path":local_file_path,"file_type":file_type, "file_name":file_name, "file_ext":file_ext}
-    s3_data = {"s3_bucket":bucket_name,"s3_key":original_key}
-    _process_record(file_data=file_data,s3_data=s3_data, source="s3")
+    file_data = {"local_file_path": local_file_path, "file_type": file_type, "file_name": file_name,
+                 "file_ext": file_ext}
+    s3_data = {"s3_bucket": bucket_name, "s3_key": original_key}
+    _process_record(file_data=file_data, s3_data=s3_data, source="s3")
 
 
 def _process_api_record(event: dict) -> None:
@@ -148,12 +148,14 @@ def _process_api_record(event: dict) -> None:
 
     # Save to S3
     s3_key = f"{FileConfig.RAW_PREFIX}{parent_folder}/{safe_file_name}" if parent_folder else safe_file_name
-    upload_files_to_s3([local_file_path],FileConfig.S3_BUCKET, s3_key)
+    upload_files_to_s3([local_file_path], FileConfig.S3_BUCKET, s3_key)
     logger.info("Saved file to s3://%s/%s", FileConfig.S3_BUCKET, s3_key)
 
-    file_data = {"local_file_path":local_file_path,"file_type":file_type, "file_name":safe_file_name, "file_ext":file_ext}
-    s3_data = {"s3_bucket":FileConfig.S3_BUCKET,"s3_key":s3_key}
+    file_data = {"local_file_path": local_file_path, "file_type": file_type, "file_name": safe_file_name,
+                 "file_ext": file_ext}
+    s3_data = {"s3_bucket": FileConfig.S3_BUCKET, "s3_key": s3_key}
     _process_record(file_data=file_data, s3_data=s3_data, source="s3")
+
 
 def lambda_handler(event, context):
     """Lambda entry point for analyzing files."""
@@ -206,4 +208,3 @@ if __name__ == '__main__':
     #
     # print("Fraud report: %s", fraud_report.model_dump_json())
     #
-
