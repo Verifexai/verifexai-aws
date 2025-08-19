@@ -1,5 +1,7 @@
+import base64
+import json
 import os
-import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, List, Union
 
@@ -10,7 +12,7 @@ from aws.analyze_file.text_analysis.text_extractor import TextExtractor
 from aws.analyze_file.font_anomalies import font_anomalies_check
 from aws.analyze_file.metadata import analyze_metadata_check
 from aws.analyze_file.OCR.ocr_processor import OCRProcessor
-from aws.common.config.config import BEDROCK_REGION
+from aws.common.config.config import BEDROCK_REGION, FileConfig
 from aws.common.models.check_result import CheckResult
 from aws.common.models.document_info import DocumentInfo
 from aws.common.utilities.enums import FileType
@@ -21,6 +23,7 @@ ocr_processor = OCRProcessor()
 CheckOutput = Union[CheckResult, List[CheckResult]]
 bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
 text_extractor = TextExtractor(bedrock_client=bedrock)
+logger = LoggerManager.get_module_logger(ANALYZE_FILE)
 
 
 def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileType) -> List[CheckResult]:
@@ -42,17 +45,14 @@ def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileTyp
     return checks
 
 
-def _process_record(record: dict, logger) -> None:
-    s3_record = record.get("s3", {})
-    bucket_name = s3_record["bucket"]["name"]
-    original_key = s3_record["object"]["key"]
-
-    parent_folder = _get_parent_folder_from_key(original_key)
-    file_type = FileType.from_parent_folder(parent_folder)
-    logger.info("Detected file type: %s", file_type.value)
-
-    # Load file into Lambda local file system
-    local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
+def _process_record(
+    local_file_path: str,
+    file_name: uuid.UUID,
+    file_ext: str,
+    file_type: FileType,
+    source: str,
+) -> None:
+    """Run extraction, checks and logging for a given file."""
     # Extract OCR information from file
     pages_data = ocr_processor.extract(local_file_path)
     # Extract structured text fields
@@ -64,7 +64,7 @@ def _process_record(record: dict, logger) -> None:
         checks=checks,
         documentInfo=DocumentInfo(
             doc_id=str(file_name),
-            source="s3",
+            source=source,
             mime_type=file_ext,
             num_pages=len(pages_data),
             created_at=_now_iso(),
@@ -72,14 +72,70 @@ def _process_record(record: dict, logger) -> None:
     )
     logger.info("Fraud report: %s", fraud_report.model_dump_json())
 
+
+def _process_s3_record(record: dict) -> None:
+    """Process an individual S3 record and run checks."""
+    s3_record = record.get("s3", {})
+    bucket_name = s3_record["bucket"]["name"]
+    original_key = s3_record["object"]["key"]
+
+    parent_folder = _get_parent_folder_from_key(original_key)
+    file_type = FileType.from_parent_folder(parent_folder)
+    logger.info("Detected file type: %s", file_type.value)
+
+    # Load file into Lambda local file system
+    local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
+    _process_record(local_file_path, file_name, file_ext, file_type, "s3")
+
+
+def _process_api_record(event: dict) -> None:
+    """Process a request coming from API Gateway.
+
+    Expected body structure:
+        {
+            "file_name": "example.pdf",
+            "file_content": "<base64 encoded content>",
+            "file_type": "tax-assessor-certificate"  # folder name
+        }
+    """
+    body = event.get("body", "{}")
+    if event.get("isBase64Encoded"):
+        body = base64.b64decode(body).decode("utf-8")
+
+    data = json.loads(body)
+    file_content_b64 = data["file_content"]
+    original_name = data.get("file_name", "uploaded_file")
+    parent_folder = data.get("file_type")
+
+    file_type = FileType.from_parent_folder(parent_folder)
+    file_ext = os.path.splitext(original_name)[1]
+
+    file_uuid = uuid.uuid4()
+    safe_file_name = f"{file_uuid}{file_ext}"
+    os.makedirs(FileConfig.TEMP_FILE_PATH, exist_ok=True)
+    local_file_path = os.path.join(FileConfig.TEMP_FILE_PATH, safe_file_name)
+
+    with open(local_file_path, "wb") as f:
+        f.write(base64.b64decode(file_content_b64))
+
+    # Save to S3
+    s3_key = f"{FileConfig.RAW_PREFIX}{parent_folder}/{safe_file_name}" if parent_folder else safe_file_name
+    s3_client = boto3.client("s3")
+    s3_client.upload_file(local_file_path, FileConfig.S3_BUCKET, s3_key)
+    logger.info("Saved file to s3://%s/%s", FileConfig.S3_BUCKET, s3_key)
+
+    _process_record(local_file_path, file_uuid, file_ext, file_type, "api")
+
 def lambda_handler(event, context):
     """Lambda entry point for analyzing files."""
-    logger = LoggerManager.get_module_logger(ANALYZE_FILE)
     logger.info("Event received: %s", event)
 
     try:
-        for record in event.get("Records", []):
-            _process_record(record, logger)
+        if "Records" in event:
+            for record in event.get("Records", []):
+                _process_s3_record(record)
+        else:
+            _process_api_record(event)
     except Exception as exc:
         logger.error("Lambda processing failed: %s", exc, exc_info=True)
         raise
