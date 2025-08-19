@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Iterable, List, Tuple
 import math
 import uuid
@@ -221,3 +222,14 @@ def _bedrock_safe_doc_name(raw: str) -> str:
     # collapse multiple spaces; trim
     name = re.sub(r"\s+", " ", name).strip()
     return name or "Document"
+
+
+def convert_floats(obj):
+    """Recursively convert float values in a dict/list to Decimal."""
+    if isinstance(obj, float):
+        return Decimal(str(obj))   # convert safely without precision loss
+    elif isinstance(obj, list):
+        return [convert_floats(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_floats(v) for k, v in obj.items()}
+    return obj
