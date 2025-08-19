@@ -2,6 +2,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from aws.common.utilities.logger_manager import LoggerManager, METADATA
+
 
 # ---------------------------------------------------------------------------
 # Producer scoring
@@ -138,6 +140,7 @@ class MetadataBaseScorer:
 
     def __init__(self, file_path: str):
         self.file_path = file_path
+        self.logger = LoggerManager.get_module_logger(METADATA)
 
     def run(
         self,

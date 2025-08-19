@@ -143,7 +143,12 @@ def _score_single_annotation(a: Dict[str, Any],
 
 class PDFMetadataScorer(MetadataBaseScorer):
     def _extract_metadata(self) -> Dict[str, Any]:
-        reader = PdfReader(self.file_path)
+        self.logger.info("Extracting PDF metadata from %s", self.file_path)
+        try:
+            reader = PdfReader(self.file_path)
+        except Exception as exc:
+            self.logger.error("Failed to read PDF metadata: %s", exc)
+            return {}
         info = reader.metadata or {}
         data: Dict[str, Any] = {
             "creation_date": info.get("/CreationDate"),
@@ -158,8 +163,8 @@ class PDFMetadataScorer(MetadataBaseScorer):
                 xmp_producer = getattr(xmp, "producer", None) or getattr(xmp, "xmp_creator_tool", None)
                 if xmp_producer:
                     data["xmp_producer"] = str(xmp_producer)
-        except Exception:
-            pass
+        except Exception as exc:
+            self.logger.warning("Failed to parse XMP metadata: %s", exc)
 
         # annotations and text extraction to detect image-only PDFs
         annotations: List[Dict[str, Any]] = []
@@ -172,8 +177,8 @@ class PDFMetadataScorer(MetadataBaseScorer):
                 text = page.extract_text() or ""
                 if text.strip():
                     text_found = True
-            except Exception:
-                pass
+            except Exception as exc:
+                self.logger.error("Failed extracting text from page %d: %s", idx, exc)
 
             # page geometry
             try:
@@ -216,7 +221,8 @@ class PDFMetadataScorer(MetadataBaseScorer):
                         "action": action_info,
                         "modified": modified,
                     })
-                except Exception:
+                except Exception as exc:
+                    self.logger.error("Failed to parse annotation on page %d: %s", idx, exc)
                     annotations.append({"page": idx, "subtype": None, "contents": None})
         if annotations:
             data["annotation"] = annotations
@@ -245,13 +251,14 @@ class PDFMetadataScorer(MetadataBaseScorer):
                             "byte_range": byte_range,
                             "valid": valid,
                         })
-        except Exception:
-            pass
+        except Exception as exc:
+            self.logger.error("Failed to parse signatures: %s", exc)
         if signatures:
             data["signatures"] = signatures
         return data
 
     def _score_metadata(self, metadata: Dict[str, Any], invoice_dates: List[str]) -> Dict[str, Any]:
+        self.logger.info("Scoring PDF metadata for %s", self.file_path)
         scored: Dict[str, Any] = {}
         scores: List[int] = []
         invoice_dt = _parse_invoice_date(invoice_dates)

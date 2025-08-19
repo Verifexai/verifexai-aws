@@ -5,21 +5,30 @@ from aws.common.config.config import client_config
 from aws.common.models.check_result import CheckResult
 from aws.common.models.evidence import Evidence
 from aws.common.utilities.enums import Category, Kind, EvidenceType, TerminationCertificateField, FileType
+from aws.common.utilities.logger_manager import LoggerManager, METADATA
 from aws.common.utilities.utils import _make_id, _now_iso
+
+logger = LoggerManager.get_module_logger(METADATA)
 
 
 def analyze_metadata(local_file_path: str,
                     file_type: FileType,
                     label_data: Dict[str, Any]=None) -> List[CheckResult]:
     """Run metadata checks for the given file and return CheckResult list."""
+    logger.info("Analyzing metadata for %s", local_file_path)
     invoice_dates = _extract_termination_dates_texts(label_data)
     checks: List[CheckResult] = []
 
     scorer = MetadataFactory.get_metadata_scorer(local_file_path)
     if scorer is None:
+        logger.warning("No metadata scorer available for %s", local_file_path)
         return checks
 
-    metadata = scorer.run(invoice_dates=invoice_dates)
+    try:
+        metadata = scorer.run(invoice_dates=invoice_dates)
+    except Exception as exc:
+        logger.error("Metadata scorer execution failed for %s: %s", local_file_path, exc)
+        return checks
 
     # Date validation
     creation = metadata.get("creation_date")
@@ -139,6 +148,7 @@ def analyze_metadata(local_file_path: str,
             )
         )
 
+    logger.info("Metadata analysis produced %d checks", len(checks))
     return checks
 
 def _extract_termination_dates_texts(label_data: Optional[Dict[str, Any]]) -> List[str]:
