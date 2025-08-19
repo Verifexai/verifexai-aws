@@ -56,7 +56,7 @@ def _process_record(
     # Extract values
     local_file_path = file_data['local_file_path']
     file_type = file_data['file_type']
-    bucket = s3_data['bucket']
+    bucket = s3_data['s3_bucket']
     s3_key = s3_data['s3_key']
 
     """Run extraction, checks and logging for a given file."""
