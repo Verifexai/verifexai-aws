@@ -18,11 +18,13 @@ from aws.common.models.document_info import DocumentInfo
 from aws.common.utilities.enums import FileType
 from aws.common.utilities.logger_manager import LoggerManager, ANALYZE_FILE
 from aws.common.utilities.utils import _now_iso, _create_fraud_report, _get_parent_folder_from_key
+from aws.common.utilities.dynamodb_manager import DynamoDBManager
 
 ocr_processor = OCRProcessor()
 bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
 text_extractor = TextExtractor(bedrock_client=bedrock)
 logger = LoggerManager.get_module_logger(ANALYZE_FILE)
+dynamodb_manager = DynamoDBManager()
 
 
 def _run_checks(local_file_path: str, pages_data, label_data, file_type: FileType) -> List[CheckResult]:
@@ -50,12 +52,23 @@ def _process_record(
     file_ext: str,
     file_type: FileType,
     source: str,
+    s3_key: str,
 ) -> None:
     """Run extraction, checks and logging for a given file."""
     # Extract OCR information from file
     pages_data = ocr_processor.extract(local_file_path)
     # Extract structured text fields
     label_data = text_extractor.extract(local_file_path, file_type, pages_data)
+
+    # Persist label data
+    label_item = dict(label_data)
+    label_item["file_path"] = s3_key
+    dynamodb_manager.save_labels(
+        file_type=file_type.value,
+        doc_id=str(file_name),
+        s3_path=s3_key,
+        labels=label_item,
+    )
 
     # Checks
     checks = _run_checks(local_file_path, pages_data, label_data, file_type)
@@ -68,6 +81,11 @@ def _process_record(
             num_pages=len(pages_data),
             created_at=_now_iso(),
         ),
+    )
+    dynamodb_manager.save_check_results(
+        file_type=file_type.value,
+        doc_id=str(file_name),
+        fraud_report_json=fraud_report.model_dump_json(),
     )
     logger.info("Fraud report: %s", fraud_report.model_dump_json())
 
@@ -84,7 +102,7 @@ def _process_s3_record(record: dict) -> None:
 
     # Load file into Lambda local file system
     local_file_path, file_name, file_ext = download_file_from_s3(bucket_name, original_key)
-    _process_record(local_file_path, file_name, file_ext, file_type, "s3")
+    _process_record(local_file_path, file_name, file_ext, file_type, "s3", original_key)
 
 
 def _process_api_record(event: dict) -> None:
@@ -123,7 +141,7 @@ def _process_api_record(event: dict) -> None:
     s3_client.upload_file(local_file_path, FileConfig.S3_BUCKET, s3_key)
     logger.info("Saved file to s3://%s/%s", FileConfig.S3_BUCKET, s3_key)
 
-    _process_record(local_file_path, file_uuid, file_ext, file_type, "api")
+    _process_record(local_file_path, file_uuid, file_ext, file_type, "api", s3_key)
 
 def lambda_handler(event, context):
     """Lambda entry point for analyzing files."""
