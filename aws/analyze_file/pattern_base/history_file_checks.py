@@ -55,7 +55,7 @@ class HistoryFileChecks:
             filter_expression = filter_expression & condition
             has_field = True
 
-        duplicate = None
+        duplicates: List[Dict[str, Any]] = []
         if has_field:
             try:
                 response = table.scan(
@@ -63,23 +63,23 @@ class HistoryFileChecks:
                     ProjectionExpression="doc_id, file_type",
                 )
                 items = response.get("Items", [])
-                duplicate = items[0] if items else None
+                duplicates.extend(items)
 
-                # Continue scanning if no matches were found but the scan was
-                # paginated.  This avoids missing a duplicate when the first page
-                # of results does not contain any matching items.
-                while not duplicate and "LastEvaluatedKey" in response:
+                # Continue scanning if the results were paginated. This ensures
+                # that all matching documents are retrieved and returned.
+                while "LastEvaluatedKey" in response:
                     response = table.scan(
                         FilterExpression=filter_expression,
                         ProjectionExpression="doc_id, file_type",
                         ExclusiveStartKey=response["LastEvaluatedKey"],
                     )
                     items = response.get("Items", [])
-                    duplicate = items[0] if items else None
+                    duplicates.extend(items)
 
-                if duplicate:
+                if duplicates:
                     self.logger.info(
-                        "Duplicate document found: %s", duplicate.get("doc_id")
+                        "Duplicate document(s) found: %s",
+                        [dup.get("doc_id") for dup in duplicates],
                     )
                 else:
                     self.logger.info("No duplicate document found")
@@ -90,17 +90,20 @@ class HistoryFileChecks:
         else:
             self.logger.warning("Insufficient label data for duplicate check")
 
-        score = 100 if duplicate else 0
+        score = 100 if duplicates else 0
         evidence: List[Evidence] = []
-        description = "Exact duplicate found" if duplicate else "No duplicate found"
+        description = (
+            "Exact duplicate found" if duplicates else "No duplicate found"
+        )
 
-        if duplicate:
-            evidence.append(
-                Evidence(
-                    type=EvidenceType.FIELD,
-                    value={"doc_id": duplicate.get("doc_id")},
+        if duplicates:
+            for duplicate in duplicates:
+                evidence.append(
+                    Evidence(
+                        type=EvidenceType.FIELD,
+                        value={"doc_id": duplicate.get("doc_id")},
+                    )
                 )
-            )
 
         return CheckResult(
             id=_make_id("ExactDuplicateCheck"),
