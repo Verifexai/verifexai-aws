@@ -38,7 +38,6 @@ class HistoryFileChecks:
 
         self.logger.info("Checking for duplicate file of type %s", file_type)
         table = self.dynamodb.labels_table
-        expression_attribute_names: Dict[str, str] = {"#txt": "text"}
         filter_expression = None
 
         for field, info in label_data.items():
@@ -46,7 +45,7 @@ class HistoryFileChecks:
             if field_value is None:
                 continue
 
-            condition = Attr(f"labels.{field}.#txt").eq(field_value)
+            condition = Attr(f"labels.{field}.text").eq(field_value)
             filter_expression = (
                 condition if filter_expression is None else filter_expression & condition
             )
@@ -57,7 +56,6 @@ class HistoryFileChecks:
                 response = table.query(
                     KeyConditionExpression=Key("file_type").eq(file_type.value),
                     FilterExpression=filter_expression,
-                    ExpressionAttributeNames=expression_attribute_names,
                     ProjectionExpression="doc_id",
                     Limit=1,
                 )
@@ -110,7 +108,6 @@ class HistoryFileChecks:
             return None
 
         table = self.dynamodb.labels_table
-        expression_attribute_names: Dict[str, str] = {"#txt": "text"}
         filter_expression = None
 
         for field in fields:
@@ -119,7 +116,7 @@ class HistoryFileChecks:
                 self.logger.warning("Missing label data for field %s", field)
                 return None
 
-            condition = Attr(f"labels.{field}.#txt").eq(field_value)
+            condition = Attr(f"labels.{field}.text").eq(field_value)
             filter_expression = (
                 condition if filter_expression is None else filter_expression & condition
             )
@@ -128,7 +125,6 @@ class HistoryFileChecks:
             response = table.query(
                 KeyConditionExpression=Key("file_type").eq(file_type.value),
                 FilterExpression=filter_expression,
-                ExpressionAttributeNames=expression_attribute_names,
                 ProjectionExpression="doc_id, labels",
             )
             items = response.get("Items", [])
