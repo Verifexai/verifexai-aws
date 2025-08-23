@@ -5,8 +5,8 @@ RUN dnf install -y \
     gcc-c++ autoconf automake libtool make pkgconfig \
     libjpeg-devel libpng-devel libtiff-devel zlib-devel \
     mesa-libGL \
-    openssl wget tar gzip xz \
- && dnf clean all \
+    wget tar gzip xz \
+ && dnf clean all
 
 # Build Leptonica
 ENV LIBLEPT_DIR=/usr/local
