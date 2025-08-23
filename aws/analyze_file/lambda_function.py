@@ -62,6 +62,7 @@ def _process_record(
     s3_key = s3_data['s3_key']
     file_name = str(file_data.get('file_name', ""))
 
+    logger.info(f"Process record: {file_name}, {bucket}, {s3_key}, {file_type}")
     """Run extraction, checks and logging for a given file."""
     # Extract OCR information from file
     pages_data = ocr_processor.extract(local_file_path)
@@ -194,7 +195,7 @@ if __name__ == '__main__':
     #
     # dynamodb_manager = DynamoDBManager(dynamodb=dynamodb)
     # ocr_processor = OCRProcessor()
-    # local_file_path = "files/test3.pdf"
+    # local_file_path = "יואב אליעזר טרנטר מוזר - טופס אישור העסקה.pdf"
     # file_type = FileType.TerminationCertificate
     # file_name = "yair-test"
     # s3_key ="s3_key-yair-test"
@@ -238,5 +239,5 @@ if __name__ == '__main__':
     # print(f"took {execution_time:.4f} seconds to execute")
     #
     # print("Fraud report: %s", fraud_report.model_dump_json())
-
+    #
 
