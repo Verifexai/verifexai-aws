@@ -41,14 +41,12 @@ class HistoryFileChecks:
         expression_attribute_names: Dict[str, str] = {"#txt": "text"}
         filter_expression = None
 
-        for idx, (field, info) in enumerate(label_data.items()):
+        for field, info in label_data.items():
             field_value = info.get("text") if isinstance(info, dict) else None
             if field_value is None:
                 continue
 
-            placeholder = f"#f{idx}"
-            expression_attribute_names[placeholder] = field
-            condition = Attr(f"labels.{placeholder}.#txt").eq(field_value)
+            condition = Attr(f"labels.{field}.#txt").eq(field_value)
             filter_expression = (
                 condition if filter_expression is None else filter_expression & condition
             )
@@ -115,15 +113,13 @@ class HistoryFileChecks:
         expression_attribute_names: Dict[str, str] = {"#txt": "text"}
         filter_expression = None
 
-        for idx, field in enumerate(fields):
+        for field in fields:
             field_value = label_data.get(field, {}).get("text")
             if field_value is None:
                 self.logger.warning("Missing label data for field %s", field)
                 return None
 
-            placeholder = f"#f{idx}"
-            expression_attribute_names[placeholder] = field
-            condition = Attr(f"labels.{placeholder}.#txt").eq(field_value)
+            condition = Attr(f"labels.{field}.#txt").eq(field_value)
             filter_expression = (
                 condition if filter_expression is None else filter_expression & condition
             )
