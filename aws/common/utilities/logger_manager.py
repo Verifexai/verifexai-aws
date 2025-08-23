@@ -1,6 +1,7 @@
 import logging
 import sys
 
+from aws.common.config.config import LoggingConfig
 
 # Logger MODULE NAMES
 ANALYZE_FILE = 'AnalyzeFilePipline'
@@ -52,18 +53,23 @@ class LoggerManager:
         return app.logger
 
     @staticmethod
-    def get_module_logger(module_name, log_level=logging.INFO):
+    def get_module_logger(module_name, log_level=None):
         """
         Get a configured logger for a specific module
 
         Args:
             module_name: Name of the module
-            log_level: Logging level (default: INFO)
+            log_level: Optional logging level to override the default
 
         Returns:
             Logger instance
         """
         logger = logging.getLogger(module_name)
+
+        # Determine log level from config if not provided
+        if log_level is None:
+            level_name = getattr(LoggingConfig, 'LOG_LEVEL', 'INFO')
+            log_level = getattr(logging, level_name.upper(), logging.INFO)
 
         # Configure only if no handlers exist
         if not logger.handlers:
