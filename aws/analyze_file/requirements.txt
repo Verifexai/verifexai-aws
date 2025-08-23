@@ -9,6 +9,7 @@ opencv-python-headless
 scikit-image
 scikit-learn
 PyPDF2
+pyHanko
 pyluach
 convertdate
 python-bidi

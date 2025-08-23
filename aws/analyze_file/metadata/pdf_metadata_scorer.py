@@ -231,26 +231,26 @@ class PDFMetadataScorer(MetadataBaseScorer):
         # digital signatures
         signatures = []
         try:
-            root = reader.trailer.get("/Root", {})
-            form = root.get("/AcroForm") if root else None
-            fields = form.get("/Fields", []) if form else []
-            for field in fields:
-                field_obj = field.get_object()
-                if field_obj.get("/FT") == "/Sig":
-                    sig = field_obj.get("/V")
-                    if sig:
-                        sig_obj = sig.get_object()
-                        byte_range = sig_obj.get("/ByteRange")
-                        file_size = os.path.getsize(self.file_path)
-                        valid = False
-                        if byte_range and len(byte_range) == 4:
-                            valid = byte_range[0] == 0 and byte_range[2] + byte_range[3] == file_size
-                        signatures.append({
-                            "name": sig_obj.get("/Name"),
-                            "date": sig_obj.get("/M"),
-                            "byte_range": byte_range,
-                            "valid": valid,
-                        })
+            from pyhanko.pdf_utils.reader import PdfFileReader as HankoReader
+            from pyhanko.sign.validation import ValidationContext, validate_pdf_signature
+            from pyhanko.sign.validation.status import SignatureCoverageLevel
+
+            with open(self.file_path, "rb") as pdf_in:
+                hanko_reader = HankoReader(pdf_in)
+                vc = ValidationContext()
+                for emb_sig in hanko_reader.embedded_signatures:
+                    status = validate_pdf_signature(emb_sig, vc)
+                    signatures.append({
+                        "field": emb_sig.field_name,
+                        "signing_time": status.signer_reported_dt.isoformat() if status.signer_reported_dt else None,
+                        "trusted": bool(status.trusted),
+                        "docmdp_ok": bool(status.docmdp_ok),
+                        "coverage": status.coverage.name if status.coverage else None,
+                        "covers_document": status.coverage == SignatureCoverageLevel.ENTIRE_FILE,
+                        "valid": bool(status.bottom_line),
+                    })
+        except ImportError:
+            self.logger.warning("pyHanko not installed, skipping signature validation")
         except Exception as exc:
             self.logger.error("Failed to parse signatures: %s", exc)
         if signatures:
@@ -308,7 +308,29 @@ class PDFMetadataScorer(MetadataBaseScorer):
 
         signatures = metadata.get("signatures")
         if signatures:
-            invalid = [s for s in signatures if not s.get("valid")]
+            invalid = []
+            for s in signatures:
+                valid = bool(s.get("valid"))
+                sign_dt = None
+                if s.get("signing_time"):
+                    try:
+                        sign_dt = datetime.fromisoformat(s["signing_time"])
+                    except Exception:
+                        sign_dt = _parse_pdf_date(s.get("signing_time") or "")
+                if valid:
+                    if not s.get("covers_document"):
+                        valid = False
+                    if creation_dt and sign_dt and sign_dt < creation_dt:
+                        valid = False
+                    if modification_dt and sign_dt and sign_dt > modification_dt:
+                        valid = False
+                    if invoice_dt and sign_dt:
+                        diff = abs((sign_dt - invoice_dt).days)
+                        if diff > MAX_DATE_DIFF_DAYS:
+                            valid = False
+                s["valid"] = valid
+                if not valid:
+                    invalid.append(s)
             s_score = 0 if not invalid else 80
             s_desc = "Valid digital signature" if not invalid else "Invalid digital signature"
             scored["signatures"] = {"value": signatures, "score": s_score, "description": s_desc}
