@@ -5,13 +5,8 @@ RUN dnf install -y \
     gcc-c++ autoconf automake libtool make pkgconfig \
     libjpeg-devel libpng-devel libtiff-devel zlib-devel \
     mesa-libGL \
-    ca-certificates openssl wget tar gzip xz \
- && update-ca-trust \
- && dnf clean all
-
-# (optional but harmless) make paths explicit
-ENV SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt
-ENV SSL_CERT_DIR=/etc/pki/ca-trust/extracted/pem
+    openssl wget tar gzip xz \ \
+ && dnf clean all \
 
 # Build Leptonica
 ENV LIBLEPT_DIR=/usr/local
@@ -48,6 +43,9 @@ ENV TESSDATA_PREFIX=/usr/local/share/tessdata/
 # Copy and install Python dependencies
 COPY analyze_file/requirements.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt
+
+# copy certs pack
+COPY common/certs/roots/*.crt /opt/roots/
 
 # Copy function code
 COPY analyze_file/ ${LAMBDA_TASK_ROOT}/aws/analyze_file/

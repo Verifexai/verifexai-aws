@@ -1,9 +1,16 @@
 import os
 from datetime import datetime
+from glob import glob
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from PyPDF2 import PdfReader
+from pyhanko.pdf_utils.reader import PdfFileReader as HankoReader
+from pyhanko.sign.validation import ValidationContext, validate_pdf_signature
+from pyhanko.sign.validation.status import SignatureCoverageLevel
+from pyhanko.sign.validation import KeyUsageConstraints
+from pyhanko_certvalidator.fetchers.requests_fetchers import RequestsFetcherBackend
+from pyhanko.keys import load_cert_from_pemder
 
 from .metadata_base import MetadataBaseScorer, score_producer
 from .metadata_utils import _name, _rect_area, _decode_annot_flags, _parse_pdf_date, _parse_invoice_date, \
@@ -196,11 +203,6 @@ class PDFMetadataScorer(MetadataBaseScorer):
         # digital signatures
         signatures = []
         try:
-            from pyhanko.pdf_utils.reader import PdfFileReader as HankoReader
-            from pyhanko.sign.validation import ValidationContext, validate_pdf_signature
-            from pyhanko.sign.validation.status import SignatureCoverageLevel
-            from pyhanko.sign.validation import KeyUsageConstraints
-
             with open(self.file_path, "rb") as pdf_in:
                 hanko_reader = HankoReader(pdf_in)
 
@@ -210,10 +212,11 @@ class PDFMetadataScorer(MetadataBaseScorer):
                     match_all_key_usages=False
                 )
 
+                EXTRA_ROOTS = [load_cert_from_pemder(p) for p in glob("/opt/roots/*.crt")]
                 vc = ValidationContext(
-                    # use OS trust store (default) — no trust_roots passed
-                    allow_fetching=True,  # fetch AIA/OCSP/CRL if needed
-                    retroactive_revinfo=True  # Acrobat-like revocation timing
+                    extra_trust_roots=EXTRA_ROOTS,
+                    allow_fetching=False,  # fast & offline
+                    retroactive_revinfo=True
                 )
                 for emb_sig in hanko_reader.embedded_signatures:
                     st = validate_pdf_signature(
