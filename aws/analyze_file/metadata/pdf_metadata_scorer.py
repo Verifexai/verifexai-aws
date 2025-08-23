@@ -6,60 +6,12 @@ from urllib.parse import urlparse
 from PyPDF2 import PdfReader
 
 from .metadata_base import MetadataBaseScorer, score_producer
+from .metadata_utils import _name, _rect_area, _decode_annot_flags, _parse_pdf_date, _parse_invoice_date, \
+    _parse_sign_dt, _safe_bool, _summarize_annotations, _join_msgs, _describe_reason, _sort_reasons, to_aware_utc
 
 MAX_DATE_DIFF_DAYS = int(os.getenv("METADATA_MAX_DATE_DIFF_DAYS", "60"))
 
 
-
-def _name(val) -> str:
-    s = str(val) if val is not None else ""
-    return s[1:] if s.startswith("/") else s
-
-def _parse_pdf_date(date_str: str) -> Optional[datetime]:
-    if not date_str:
-        return None
-    try:
-        if date_str.startswith("D:"):
-            date_str = date_str[2:]
-        return datetime.strptime(date_str[:14], "%Y%m%d%H%M%S")
-    except Exception:
-        return None
-
-def _decode_annot_flags(f: Optional[int]) -> Dict[str, bool]:
-    f = int(f or 0)
-    return {
-        "Invisible": bool(f & 1),
-        "Hidden": bool(f & 2),
-        "Print": bool(f & 4),
-        "NoView": bool(f & 32),
-        "ReadOnly": bool(f & 64),
-        "Locked": bool(f & 128),
-        "ToggleNoView": bool(f & 256),
-        "LockedContents": bool(f & 512),
-    }
-
-def _summarize_annotations(annots: List[Dict[str, Any]]) -> Dict[str, int]:
-    by_type = {}
-    for a in annots:
-        t = _name(a.get("subtype")) or "Unknown"
-        by_type[t] = by_type.get(t, 0) + 1
-    return by_type
-
-def _parse_invoice_date(dates: List[str]) -> Optional[datetime]:
-    for d in dates:
-        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%Y%m%d"):
-            try:
-                return datetime.strptime(d, fmt)
-            except ValueError:
-                continue
-    return None
-
-def _rect_area(rect) -> Optional[float]:
-    try:
-        llx, lly, urx, ury = map(float, rect)
-        return max(0.0, (urx - llx)) * max(0.0, (ury - lly))
-    except Exception:
-        return None
 
 ANNOT_RISK_BASE = {
     "Link": 10,
@@ -69,6 +21,19 @@ ANNOT_RISK_BASE = {
     "Widget": 45,  # form fields on an invoice tend to be odd
     "FileAttachment": 95, "Sound": 95, "Movie": 95, "RichMedia": 98,
 }
+
+# Catastrophic / fraud floors
+CATASTROPHIC_INTEGRITY = 85   # broken signature => 100
+FRAUD_FLOOR_TIME = 90          # any time anomaly => at least 95
+
+SIGNATURES_WEIGHTS = {
+    "untrusted_chain": 25,      # chain cannot build to a trusted root
+    "indeterminate_chain": 10,  # trust not known / indeterminate
+    "not_cover_entire": 8,      # signature doesn't cover ENTIRE_FILE
+    "docmdp_fail": 8,           # DocMDP/diff policy failure
+    "missing_sign_time": 15,     # signing time absent or unparsable
+}
+
 
 SUSPICIOUS_SCHEMES = ("javascript:", "data:", "file:", "ftp:")
 
@@ -234,20 +199,40 @@ class PDFMetadataScorer(MetadataBaseScorer):
             from pyhanko.pdf_utils.reader import PdfFileReader as HankoReader
             from pyhanko.sign.validation import ValidationContext, validate_pdf_signature
             from pyhanko.sign.validation.status import SignatureCoverageLevel
+            from pyhanko.sign.validation import KeyUsageConstraints
 
             with open(self.file_path, "rb") as pdf_in:
                 hanko_reader = HankoReader(pdf_in)
-                vc = ValidationContext()
+
+                key_usage = KeyUsageConstraints(
+                    # pyHanko’s default needs non_repudiation; accept either bit for practicality
+                    key_usage={'non_repudiation', 'digital_signature'},
+                    match_all_key_usages=False
+                )
+
+                vc = ValidationContext(
+                    # use OS trust store (default) — no trust_roots passed
+                    allow_fetching=True,  # fetch AIA/OCSP/CRL if needed
+                    retroactive_revinfo=True  # Acrobat-like revocation timing
+                )
                 for emb_sig in hanko_reader.embedded_signatures:
-                    status = validate_pdf_signature(emb_sig, vc)
+                    st = validate_pdf_signature(
+                        emb_sig, vc,
+                        key_usage_settings=key_usage,
+                        skip_diff=True  # ignore DocMDP/diff policy
+                    )
                     signatures.append({
                         "field": emb_sig.field_name,
-                        "signing_time": status.signer_reported_dt.isoformat() if status.signer_reported_dt else None,
-                        "trusted": bool(status.trusted),
-                        "docmdp_ok": bool(status.docmdp_ok),
-                        "coverage": status.coverage.name if status.coverage else None,
-                        "covers_document": status.coverage == SignatureCoverageLevel.ENTIRE_FILE,
-                        "valid": bool(status.bottom_line),
+                        "signed_at": st.signer_reported_dt.isoformat() if st.signer_reported_dt else None,
+                        # crypto integrity of the byte ranges
+                        "intact": bool(getattr(st, "intact", None)),
+                        # chain builds to an OS-trusted root
+                        "chain_trusted": bool(st.trusted),
+                        # simple verdict most people expect
+                        "trusted": bool(st.trusted) and bool(getattr(st, "intact", None)),
+                        "covers_document": st.coverage == SignatureCoverageLevel.ENTIRE_FILE,
+                        # pyHanko’s full-policy verdict (can be False due to stricter policies)
+                        "valid_policy": bool(st.bottom_line),
                     })
         except ImportError:
             self.logger.warning("pyHanko not installed, skipping signature validation")
@@ -308,33 +293,123 @@ class PDFMetadataScorer(MetadataBaseScorer):
 
         signatures = metadata.get("signatures")
         if signatures:
-            invalid = []
+            issue_scores = []
             for s in signatures:
-                valid = bool(s.get("valid"))
-                sign_dt = None
-                if s.get("signing_time"):
-                    try:
-                        sign_dt = datetime.fromisoformat(s["signing_time"])
-                    except Exception:
-                        sign_dt = _parse_pdf_date(s.get("signing_time") or "")
-                if valid:
-                    if not s.get("covers_document"):
-                        valid = False
-                    if creation_dt and sign_dt and sign_dt < creation_dt:
-                        valid = False
-                    if modification_dt and sign_dt and sign_dt > modification_dt:
-                        valid = False
-                    if invoice_dt and sign_dt:
+                reasons = []
+                issue = 0
+
+                # Parse signing time
+                sign_dt = _parse_sign_dt(s)
+
+                # Inputs from your validator payload
+                intact = _safe_bool(s.get("intact"))  # cryptographic integrity (True/False/None)
+                trusted = _safe_bool(s.get("trusted"))  # chain to trusted root (True/False/None)
+                covers_document = bool(s.get("covers_document"))
+                docmdp_ok = s.get("docmdp_ok")  # True/False/None
+
+                # ---- 1) Catastrophic: cryptographic integrity failure => 100 ----
+                if intact is False:
+                    issue = CATASTROPHIC_INTEGRITY
+                    reasons.append("integrity_fail")
+                    s["issue_score"] = issue
+                    s["issue_reasons"] = reasons
+                    issue_scores.append(issue)
+                    continue  # no need to consider anything else
+
+                # ---- 2) Time anomalies => fraud floor 95 ----
+                time_issue = False
+                if sign_dt is None:
+                    issue += SIGNATURES_WEIGHTS["missing_sign_time"];
+                    reasons.append("missing_sign_time")
+                else:
+                    sign_dt = to_aware_utc(sign_dt)
+                    creation_dt = to_aware_utc(creation_dt)
+                    modification_dt = to_aware_utc(modification_dt)
+                    invoice_dt = to_aware_utc(invoice_dt)
+
+                    if creation_dt and sign_dt < creation_dt:
+                        time_issue = True;
+                        reasons.append("sign_before_creation")
+                    if modification_dt and sign_dt > modification_dt:
+                        time_issue = True;
+                        reasons.append("sign_after_modification")
+                    if invoice_dt:
                         diff = abs((sign_dt - invoice_dt).days)
                         if diff > MAX_DATE_DIFF_DAYS:
-                            valid = False
-                s["valid"] = valid
-                if not valid:
-                    invalid.append(s)
-            s_score = 0 if not invalid else 80
-            s_desc = "Valid digital signature" if not invalid else "Invalid digital signature"
-            scored["signatures"] = {"value": signatures, "score": s_score, "description": s_desc}
-            scores.append(s_score)
+                            time_issue = True;
+                            reasons.append("invoice_date_far")
+
+                if time_issue:
+                    issue = max(issue, FRAUD_FLOOR_TIME)  # enforce high score
+
+                # ---- 3) Smaller penalties (trust, coverage, policy) ----
+                if trusted is False:
+                    issue += SIGNATURES_WEIGHTS["untrusted_chain"];
+                    reasons.append("untrusted_chain")
+                elif trusted is None:
+                    issue += SIGNATURES_WEIGHTS["indeterminate_chain"];
+                    reasons.append("indeterminate_chain")
+
+                if not covers_document:
+                    issue += SIGNATURES_WEIGHTS["not_cover_entire"];
+                    reasons.append("not_cover_entire")
+
+                if docmdp_ok is False:
+                    issue += SIGNATURES_WEIGHTS["docmdp_fail"];
+                    reasons.append("docmdp_fail")
+
+                # Clamp and store per-signature diagnostics
+                issue = max(0, min(100, issue))
+                s["issue_score"] = issue
+                s["issue_reasons"] = reasons
+                s["signed_at"] = sign_dt.isoformat() if sign_dt else None
+
+                issue_scores.append(issue)
+
+            # Overall (keep "best signature wins" semantics)
+            overall_issue = max(issue_scores) if issue_scores else 100
+            sig_idx = issue_scores.index(overall_issue) if issue_scores else None
+            chosen = signatures[sig_idx] if sig_idx is not None else None
+
+            if overall_issue == 0 or not chosen:
+                s_desc = "Valid digital signature"
+            else:
+                # Build precise messages from the chosen signature's reasons
+                reasons_sorted = _sort_reasons(chosen.get("issue_reasons", []))
+                # recover dates for rich messages
+                sign_dt = chosen.get("signed_at")
+                try:
+                    sign_dt = datetime.fromisoformat(sign_dt) if isinstance(sign_dt, str) else sign_dt
+                except Exception:
+                    pass
+
+                msgs = [
+                    _describe_reason(
+                        r,
+                        sign_dt=sign_dt,
+                        creation_dt=creation_dt,
+                        modification_dt=modification_dt,
+                        invoice_dt=invoice_dt,
+                        max_diff_days=MAX_DATE_DIFF_DAYS,
+                    )
+                    for r in reasons_sorted
+                ]
+
+                # Stronger headline if catastrophic/fraud-like reasons present
+                headline = "Cryptographically invalid" if "integrity_fail" in reasons_sorted \
+                    else ("Likely fraudulent" if any(r in reasons_sorted for r in
+                                                     ("sign_before_creation", "sign_after_modification",
+                                                      "invoice_date_far"))
+                          else "Issues detected in digital signature")
+
+                s_desc = f"{headline}: {_join_msgs(msgs)}"
+
+            scored["signatures"] = {
+                "value": signatures,
+                "score": overall_issue,
+                "description": s_desc,
+            }
+            scores.append(overall_issue)
 
         annotations = metadata.get("annotation")
         if annotations:

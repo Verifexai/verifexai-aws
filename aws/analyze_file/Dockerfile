@@ -5,8 +5,13 @@ RUN dnf install -y \
     gcc-c++ autoconf automake libtool make pkgconfig \
     libjpeg-devel libpng-devel libtiff-devel zlib-devel \
     mesa-libGL \
-    wget tar gzip xz \
+    ca-certificates openssl wget tar gzip xz \
+ && update-ca-trust \
  && dnf clean all
+
+# (optional but harmless) make paths explicit
+ENV SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt
+ENV SSL_CERT_DIR=/etc/pki/ca-trust/extracted/pem
 
 # Build Leptonica
 ENV LIBLEPT_DIR=/usr/local

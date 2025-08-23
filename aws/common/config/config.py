@@ -34,5 +34,5 @@ class FileConfig:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Client Config
-client_config_file = os.environ.get('CLIENT_CONFIG_FILE', '../client_config.json')
+client_config_file = os.environ.get('CLIENT_CONFIG_FILE', '../../client_config.json')
 client_config = ClientConfig.from_file(client_config_file)
