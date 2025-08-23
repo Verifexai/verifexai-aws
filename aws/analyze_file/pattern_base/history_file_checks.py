@@ -58,7 +58,7 @@ class HistoryFileChecks:
             has_field = True
             self.logger.debug("Added filter for %s=%s", field, field_value)
 
-        duplicate = None
+        duplicates: List[Dict[str, Any]] = []
         if has_field:
             self.logger.debug("Final filter expression: %s", filter_expression)
             try:
@@ -68,12 +68,12 @@ class HistoryFileChecks:
                 )
                 self.logger.debug("Scan response: %s", response)
                 items = response.get("Items", [])
-                duplicate = items[0] if items else None
+                duplicates.extend(items)
 
-                # Continue scanning if no matches were found but the scan was
-                # paginated.  This avoids missing a duplicate when the first page
-                # of results does not contain any matching items.
-                while not duplicate and "LastEvaluatedKey" in response:
+                # Continue scanning if additional pages are available. This ensures
+                # that all duplicate entries are collected rather than only the
+                # first match.
+                while "LastEvaluatedKey" in response:
                     response = table.scan(
                         FilterExpression=filter_expression,
                         ProjectionExpression="doc_id, file_type",
@@ -81,11 +81,12 @@ class HistoryFileChecks:
                     )
 
                     items = response.get("Items", [])
-                    duplicate = items[0] if items else None
+                    duplicates.extend(items)
 
-                if duplicate:
+                if duplicates:
                     self.logger.info(
-                        "Duplicate document found: %s", duplicate.get("doc_id")
+                        "Duplicate documents found: %s",
+                        [item.get("doc_id") for item in duplicates],
                     )
                 else:
                     self.logger.info("No duplicate document found")
@@ -96,11 +97,13 @@ class HistoryFileChecks:
         else:
             self.logger.warning("Insufficient label data for duplicate check")
 
-        score = 100 if duplicate else 0
+        score = 100 if duplicates else 0
         evidence: List[Evidence] = []
-        description = "Exact duplicate found" if duplicate else "No duplicate found"
+        description = (
+            "Exact duplicates found" if duplicates else "No duplicate found"
+        )
 
-        if duplicate:
+        for duplicate in duplicates:
             evidence.append(
                 Evidence(
                     type=EvidenceType.FIELD,
