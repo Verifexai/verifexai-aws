@@ -17,8 +17,8 @@ def pattern_base_check(file_type: FileType, label_data: Dict[str, Any], dynamodb
     if check_duplicate:
         checks.append(check_duplicate)
 
-    check_pattern = history_check.get_worker_history_files(file_type=file_type, label_data=label_data)
-    if check_pattern:
-        checks.append(check_pattern)
+    # check_pattern = history_check.get_worker_history_files(file_type=file_type, label_data=label_data)
+    # if check_pattern:
+    #     checks.append(check_pattern)
 
     return checks
