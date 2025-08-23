@@ -4,6 +4,7 @@ import os
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
+from numbers import Number
 from typing import Iterable, List, Tuple
 import math
 import uuid
@@ -225,11 +226,27 @@ def _bedrock_safe_doc_name(raw: str) -> str:
 
 
 def convert_floats(obj):
-    """Recursively convert float values in a dict/list to Decimal."""
-    if isinstance(obj, float):
-        return Decimal(str(obj))   # convert safely without precision loss
-    elif isinstance(obj, list):
-        return [convert_floats(i) for i in obj]
-    elif isinstance(obj, dict):
+    """Recursively convert numeric values to Decimal for DynamoDB storage.
+
+    DynamoDB's low-level API does not accept ``float`` types. This helper walks
+    through nested containers and converts any numeric value (including types
+    from libraries like ``numpy``) into :class:`~decimal.Decimal` objects. Lists,
+    tuples and sets are traversed recursively.
+    """
+
+    # Preserve bools (which are a subclass of int) and existing Decimals
+    if isinstance(obj, bool) or isinstance(obj, Decimal):
+        return obj
+    # Convert any other numeric type (e.g. int, float, numpy.floating)
+    if isinstance(obj, Number):
+        return Decimal(str(obj))
+    # Recurse into common container types
+    if isinstance(obj, dict):
         return {k: convert_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [convert_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [convert_floats(v) for v in obj]
+    if isinstance(obj, set):
+        return {convert_floats(v) for v in obj}
     return obj
