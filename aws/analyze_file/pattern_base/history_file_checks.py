@@ -46,22 +46,27 @@ class HistoryFileChecks:
         filter_expression = Attr("file_type").eq(file_type.value)
         has_field = False
 
+        self.logger.debug("Label data: %s", label_data)
+
         for field, info in label_data.items():
             field_value = info.get("text") if isinstance(info, dict) else None
             if field_value is None:
+                self.logger.debug("Skipping field %s (no text value)", field)
                 continue
-
-            condition = Attr(f"labels.{field}.text").eq(field_value)
+            condition = Attr(f"labels.label_data.{field}.text").eq(field_value)
             filter_expression = filter_expression & condition
             has_field = True
+            self.logger.debug("Added filter for %s=%s", field, field_value)
 
         duplicate = None
         if has_field:
+            self.logger.debug("Final filter expression: %s", filter_expression)
             try:
                 response = table.scan(
                     FilterExpression=filter_expression,
                     ProjectionExpression="doc_id, file_type",
                 )
+                self.logger.debug("Scan response: %s", response)
                 items = response.get("Items", [])
                 duplicate = items[0] if items else None
 
@@ -74,6 +79,7 @@ class HistoryFileChecks:
                         ProjectionExpression="doc_id, file_type",
                         ExclusiveStartKey=response["LastEvaluatedKey"],
                     )
+
                     items = response.get("Items", [])
                     duplicate = items[0] if items else None
 
@@ -136,7 +142,7 @@ class HistoryFileChecks:
                 self.logger.warning("Missing label data for field %s", field)
                 return None
 
-            condition = Attr(f"labels.{field}.text").eq(field_value)
+            condition = Attr(f"labels.label_data.{field}.text").eq(field_value)
             filter_expression = (
                 condition if filter_expression is None else filter_expression & condition
             )
