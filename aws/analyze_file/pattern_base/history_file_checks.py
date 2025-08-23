@@ -38,7 +38,13 @@ class HistoryFileChecks:
 
         self.logger.info("Checking for duplicate file of type %s", file_type)
         table = self.dynamodb.labels_table
-        filter_expression = None
+
+        # Always constrain the search by the file type.  The DynamoDB table uses
+        # ``doc_id`` as the partition key and ``file_type`` as the sort key, so we
+        # cannot issue a ``query`` using ``file_type`` alone.  Instead we perform a
+        # ``scan`` with a filter on ``file_type`` and all available label fields.
+        filter_expression = Attr("file_type").eq(file_type.value)
+        has_field = False
 
         for field, info in label_data.items():
             field_value = info.get("text") if isinstance(info, dict) else None
@@ -46,27 +52,41 @@ class HistoryFileChecks:
                 continue
 
             condition = Attr(f"labels.{field}.text").eq(field_value)
-            filter_expression = (
-                condition if filter_expression is None else filter_expression & condition
-            )
+            filter_expression = filter_expression & condition
+            has_field = True
 
         duplicate = None
-        if filter_expression is not None:
+        if has_field:
             try:
-                response = table.query(
-                    KeyConditionExpression=Key("file_type").eq(file_type.value),
+                response = table.scan(
                     FilterExpression=filter_expression,
-                    ProjectionExpression="doc_id",
-                    Limit=1,
+                    ProjectionExpression="doc_id, file_type",
                 )
                 items = response.get("Items", [])
                 duplicate = items[0] if items else None
+
+                # Continue scanning if no matches were found but the scan was
+                # paginated.  This avoids missing a duplicate when the first page
+                # of results does not contain any matching items.
+                while not duplicate and "LastEvaluatedKey" in response:
+                    response = table.scan(
+                        FilterExpression=filter_expression,
+                        ProjectionExpression="doc_id, file_type",
+                        ExclusiveStartKey=response["LastEvaluatedKey"],
+                    )
+                    items = response.get("Items", [])
+                    duplicate = items[0] if items else None
+
                 if duplicate:
-                    self.logger.info("Duplicate document found: %s", duplicate.get("doc_id"))
+                    self.logger.info(
+                        "Duplicate document found: %s", duplicate.get("doc_id")
+                    )
                 else:
                     self.logger.info("No duplicate document found")
             except Exception as exc:
-                self.logger.error("Failed to query DynamoDB for duplicate check: %s", exc)
+                self.logger.error(
+                    "Failed to scan DynamoDB for duplicate check: %s", exc
+                )
         else:
             self.logger.warning("Insufficient label data for duplicate check")
 
