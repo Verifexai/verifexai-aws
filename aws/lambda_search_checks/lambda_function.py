@@ -6,10 +6,16 @@ from typing import Dict, List
 import boto3
 from boto3.dynamodb.conditions import Attr
 
+from aws.common.config.config import BEDROCK_REGION
 from aws.common.utilities.logger_manager import LoggerManager
+from aws.common.utilities.utils import _replace_decimals
 
 logger = LoggerManager.get_module_logger("SearchChecks")
 
+aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+dynamodb = boto3.resource("dynamodb", region_name=BEDROCK_REGION, aws_access_key_id=aws_access_key_id,
+                          aws_secret_access_key=aws_secret_access_key)
 
 def _search_checks(table, search_text: str) -> List[Dict[str, str]]:
     """Scan the table using DynamoDB filter expressions for the search text."""
@@ -58,8 +64,13 @@ def lambda_handler(event, context):
         }
 
     table_name = os.getenv("DDB_CHECKS_TABLE", "document-check-results")
-    dynamodb = boto3.resource("dynamodb")
     table = dynamodb.Table(table_name)
 
     matches = _search_checks(table, search_param)
-    return {"statusCode": 200, "body": json.dumps(matches)}
+    safe_matches = _replace_decimals(matches, mode="number")
+
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": safe_matches,
+    }

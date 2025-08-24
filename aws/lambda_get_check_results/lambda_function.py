@@ -1,3 +1,4 @@
+
 import os
 import json
 import base64
@@ -6,11 +7,13 @@ from typing import Any, Dict, Optional, List
 import boto3
 from boto3.dynamodb.conditions import Attr
 
+from aws.common.config.config import BEDROCK_REGION
 from aws.common.utilities.logger_manager import LoggerManager
 
 _logger = LoggerManager.get_module_logger("GetCheckResults")
 
-_dynamodb = boto3.resource("dynamodb")
+_dynamodb = boto3.resource("dynamodb",region_name=BEDROCK_REGION)
+
 _table_name = os.getenv("DDB_CHECKS_TABLE", "document-check-results")
 _table = _dynamodb.Table(_table_name)
 
@@ -63,7 +66,7 @@ def lambda_handler(event, context):  # pragma: no cover - AWS entrypoint
     if exclusive_start_key:
         scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
     if risk_level:
-        scan_kwargs["FilterExpression"] = Attr("risk_level").eq(risk_level)
+        scan_kwargs["FilterExpression"] = Attr("risk_level").gt(risk_level)
 
     response = _table.scan(**scan_kwargs)
     items: List[Dict[str, Any]] = response.get("Items", [])
@@ -80,5 +83,5 @@ def lambda_handler(event, context):  # pragma: no cover - AWS entrypoint
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body, default=str),
+        "body": body,
     }

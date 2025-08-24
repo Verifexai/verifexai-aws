@@ -11,7 +11,7 @@ import uuid
 from urllib.parse import unquote_plus
 from pathlib import PurePosixPath
 from typing import Optional
-from aws.analyze_file.summary import build_manual_summary_text
+from aws.common.utilities.summary import build_manual_summary_text
 from aws.common.config.config import client_config
 from aws.common.config.version import PLATFORM_VERSION
 from aws.common.models.check_result import CheckResult
@@ -27,6 +27,32 @@ def _now_iso() -> datetime:
 
 def _make_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+def _replace_decimals(obj, *, mode="number"):
+    """
+    Recursively convert all Decimal values inside obj.
+
+    mode="number" -> ints if integral, else floats
+    mode="string" -> strings (no precision loss)
+    """
+    if isinstance(obj, Decimal):
+        if mode == "string":
+            return str(obj)
+        if mode == "number":
+            return int(obj) if obj == obj.to_integral_value() else float(obj)
+        raise ValueError("mode must be 'number' or 'string'")
+
+    if isinstance(obj, dict):
+        return {k: _replace_decimals(v, mode=mode) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_replace_decimals(v, mode=mode) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_replace_decimals(v, mode=mode) for v in obj)
+    if isinstance(obj, set):
+        return {_replace_decimals(v, mode=mode) for v in obj}
+
+    return obj
+
 
 def _create_fraud_report(checks: List[CheckResult], documentInfo: DocumentInfo) -> FraudReport:
     logger = LoggerManager.get_module_logger(ANALYZE_FILE)

@@ -9,5 +9,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY lambda_get_check_results/ ${LAMBDA_TASK_ROOT}/aws/lambda_get_check_results/
 COPY common/ ${LAMBDA_TASK_ROOT}/aws/common/
+COPY client_config.json ${LAMBDA_TASK_ROOT}/aws/analyze_file/client_config.json
 
 CMD ["aws.lambda_get_check_results.lambda_function.lambda_handler"]
