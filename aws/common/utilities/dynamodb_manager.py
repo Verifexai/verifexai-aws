@@ -47,17 +47,17 @@ class DynamoDBManager:
         Parameters
         ----------
         file_type: str
-            Document type used as the partition key.
+            Document type used as the sort key.
         doc_id: str
-            Unique document identifier (sort key).
+            Unique document identifier (partition key).
         s3_path: str
             Full S3 key of the uploaded file.
         labels: Dict[str, Any]
             Extracted label data to persist.
         """
         item = {
-            "file_type": file_type,
             "doc_id": doc_id,
+            "file_type": file_type,
             "s3_path": s3_path,
             "bucket": bucket,
             "labels": convert_floats(labels),
@@ -75,13 +75,16 @@ class DynamoDBManager:
             bucket: str,
             fraud_report_json: str
     ) -> None:
-        """Persist fraud report JSON in DynamoDB."""
+        """Persist fraud report JSON in DynamoDB following the doc_id/file_type schema."""
+        report_dict = json.loads(fraud_report_json)
         item = {
-            "file_type": file_type,
             "doc_id": doc_id,
+            "file_type": file_type,
+            "risk_level": report_dict.get("overall", {}).get("risk_score"),
+            "created_at": report_dict.get("document", {}).get("created_at"),
             "s3_path": s3_path,
             "bucket": bucket,
-            "checks": convert_floats(json.loads(fraud_report_json)),
+            "checks": convert_floats(report_dict),
         }
         try:
             self.checks_table.put_item(Item=item)
