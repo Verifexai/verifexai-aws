@@ -11,11 +11,7 @@ from aws.common.utilities.logger_manager import LoggerManager
 from aws.common.utilities.utils import _replace_decimals
 
 logger = LoggerManager.get_module_logger("SearchChecks")
-
-aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
-aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-dynamodb = boto3.resource("dynamodb", region_name=BEDROCK_REGION, aws_access_key_id=aws_access_key_id,
-                          aws_secret_access_key=aws_secret_access_key)
+dynamodb = boto3.resource("dynamodb", region_name=BEDROCK_REGION)
 
 def _search_checks(table, search_text: str) -> List[Dict[str, str]]:
     """Scan the table using DynamoDB filter expressions for the search text."""
